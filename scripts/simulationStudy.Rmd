@@ -1,0 +1,192 @@
+---
+title: "Root mean squared error"
+output: html_document
+---
+
+## Monte Carlo simulation study 
+
+### Overview: 
+
+1. Simulate cell type-specific DNAm profiles with 
+platform-dependent random effects ($X_k$ matrices)
+with different mean methylation levels 
+(alpha0, alpha1, sig0, sig1) varying across two platforms. 
+These matricies are used for all simulated samples in Step 2. 
+2. For a given DNAm sample (1 to `nSamples` e.g. 100), 
+  a. Simulate a true cell composition $\pi$. 
+  b. Simulate a 450k array sample (Y450k = X450k * pi + err) 
+     and RRBS sample (Ybs = Xbs * pi + err)
+3. Estimate cell composition 450k and RRBS samples using 
+Houseman and methylCC methods. Scale cell composition
+estimates to sum to 1, if needed.
+4. Calculate $RMSE_k$ for each cell type $k$. 
+Average across cell types for mean RMSE. 
+
+### Run code on odyssey
+
+```{r}
+library(minfi)
+library(quadprog)
+library(methylCC)
+library(doParallel)
+library(abind)
+library(tidyr)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/simStudy"
+
+# Z matrix with 64 regions and 4 cell types: 0 = unmethylated, 1 = methylated
+Z = as.matrix(expand.grid(c(0,1), c(0,1), c(0,1)))
+Z = apply(Z, 2, function(x){rep(x, each=8)})
+IDs = c("Lymph","Mono","Gran")
+colnames(Z) <- IDs
+K = ncol(Z)
+R = nrow(Z)
+nSamples = 100 # number of whole blood samples
+sdtrue = 0.1
+
+alpha0450k = 0.15; alpha1450k = 0.75
+sd0450k = 0.03; sd1450k = 0.04
+alpha0bs = 0.03; alpha1bs = 0.85
+sd0bs = 0.01; sd1bs = 0.03
+
+N <- 200
+
+nCores = 10
+registerDoParallel(cores = nCores)
+workers <- getDoParWorkers()
+backend <- getDoParName()
+version <- getDoParVersion()
+
+Sys.time()
+simResults <- foreach(kk = 1:N) %dopar% {
+  
+  delta0450k = matrix(rnorm(R, mean = alpha0450k, sd = sd0450k), ncol = 1)
+  delta1450k = matrix(rnorm(R, mean = alpha1450k, sd = sd1450k), ncol = 1)
+  X450k = (sweep((1-Z), 1, delta0450k, FUN = "*")) + (sweep(Z, 1, delta1450k, FUN = "*"))
+  X450k[X450k<0] <- 0.01; X450k[X450k>1] <- 0.99
+  
+  delta0bs = matrix(rnorm(R, mean = alpha0bs, sd = sd0bs), ncol = 1)
+  delta1bs = matrix(rnorm(R, mean = alpha1bs, sd = sd1bs), ncol = 1)
+  Xbs = (sweep((1-Z), 1, delta0bs, FUN = "*")) + (sweep(Z, 1, delta1bs, FUN = "*"))
+  Xbs[Xbs<0] <- 0.01; Xbs[Xbs>1] <- 0.99
+  
+  simResultsSub <- array(dim=c(K, 5, nSamples))
+  pi.truth <- array(0, dim=c(K, nSamples))
+  pi.truth[1,] <- rbeta(nSamples, shape1 = 3, shape2 = 9) # Lymph
+  pi.truth[2,] <- rbeta(nSamples, shape1 = 4, shape2 = 39)   # Mono 
+  pi.truth[3,] <- rbeta(nSamples, shape1 = 9, shape2 = 5) # Gran
+  pi.truth <- sweep(abs(pi.truth), 2, colSums(abs(pi.truth)), FUN = "/")
+    
+  err = matrix(rnorm(R*nSamples, mean = 0, sd = sdtrue), nrow=R, ncol=nSamples)
+  Y450k <- abs(X450k %*% pi.truth + err)
+    
+  err = matrix(rnorm(R*nSamples, mean = 0, sd = sdtrue), nrow=R, ncol=nSamples)
+  Ybs = abs(Xbs %*% pi.truth + err)
+    
+  #### 450k data
+  # Houseman method
+  mleHouse450k <- minfi:::projectCellType(Y450k, X450k)
+  mleHouse450k <- sweep(mleHouse450k, 1, rowSums(mleHouse450k), FUN = "/")
+    
+  # Hicks method
+  est <- estimateCC(object=Y450k, regionMat=Z, initParamMethod = "random",
+                    epsilon = .1, verbose = FALSE, maxIter = 50)
+  mleHicks450k <- as.matrix(cellcounts(est))
+    
+  # Houseman method
+  mleHousebs = minfi:::projectCellType(Ybs, X450k)
+  mleHousebs <- sweep(mleHousebs, 1, rowSums(mleHousebs), FUN = "/")
+    
+  # Hicks method
+  est <- estimateCC(object=Ybs, regionMat=Z, initParamMethod = "random",
+                    epsilon = .1, verbose = FALSE, maxIter = 50)
+  mleHicksbs <- as.matrix(cellcounts(est))
+    
+  simResultsSub[,1,] <- pi.truth
+  simResultsSub[,2,] <- t(mleHouse450k)
+  simResultsSub[,3,] <- t(mleHicks450k)
+  simResultsSub[,4,] <- t(mleHousebs)
+  simResultsSub[,5,] <- t(mleHicksbs)
+  
+  return(simResultsSub)
+}
+Sys.time()
+
+simResults <- abind(simResults, along = 4)
+
+message("Saving results.")
+saveRDS(simResults, file=file.path(dataPath, "simData/simResults.rds"))
+```
+
+### Create Figure S1
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(cowplot)
+library(tidyr)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/simStudy"
+
+Z = as.matrix(expand.grid(c(0,1), c(0,1), c(0,1)))
+Z = apply(Z, 2, function(x){rep(x, each=8)})
+IDs = c("Lymph","Mono","Gran")
+colnames(Z) <- IDs
+K = ncol(Z)
+R = nrow(Z)
+sdtrue = 0.1
+
+alpha0450k = 0.15; alpha1450k = 0.75
+sd0450k = 0.03; sd1450k = 0.04
+alpha0bs = 0.03; alpha1bs = 0.85
+sd0bs = 0.01; sd1bs = 0.03
+
+simResults <- readRDS(file.path(dataPath, "simData/simResults.rds")) 
+nSamples <- dim(simResults)[3]  # number of whole blood samples
+N <- dim(simResults)[4] # number of MC simulations
+
+# calculate RMSE
+house450k.all = hicks450k.all = housebs.all = hicksbs.all = array(dim=c(N, length(c("bias","mse"))))
+for(kk in 1:N){
+  
+  house450k = data.frame("rmse" = sqrt(t(t(rowMeans((simResults[,2,,kk] - simResults[,1,,kk])^2)))))
+  hicks450k = data.frame("rmse" = sqrt(t(t(rowMeans((simResults[,3,,kk] - simResults[,1,,kk])^2)))))
+  housebs = data.frame("rmse" = sqrt(t(t(rowMeans((simResults[,4,,kk] - simResults[,1,,kk])^2)))))
+  hicksbs = data.frame("rmse" = sqrt(t(t(rowMeans((simResults[,5,,kk] - simResults[,1,,kk])^2)))))
+
+  # average across cell types
+  house450k.all[kk,] <- colMeans(house450k)
+  hicks450k.all[kk,] <- colMeans(hicks450k)
+  housebs.all[kk,] <- colMeans(housebs)
+  hicksbs.all[kk,] <- colMeans(hicksbs)
+}
+
+pdf(file.path(dataPath, "figs/FigureS1.pdf"), width = 12, height = 4)
+par(mfrow=c(1,3))
+xs = seq(0,1,by=0.001)
+plot(x=xs, y = dnorm(x=xs, mean = alpha0450k, sd = sd0450k), type = "l", 
+     ylim = c(0, 45), lwd = 2, cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5,
+     xlab = "Methylation", ylab = "density", 
+     main = "Simulated platform-dependent\nrandom effects")
+lines(x=xs, y = dnorm(x=xs, mean = alpha0bs, sd = sd0bs), type = "l", 
+      lty = 2, lwd = 2)
+lines(x=xs, y = dnorm(x=xs, mean = alpha1450k, sd = sd1450k), 
+      type = "l", lwd = 2)
+lines(x=xs, y = dnorm(x=xs, mean = alpha1bs, sd = sd1bs), type = "l", 
+      lty = 2, lwd = 2)
+legend('topright', c("450k", "RRBS"), col = 1, lty = 1:2, lwd = 3, cex = 1.5)
+mtext(text = "A", side = 3, line = 0, cex = 2, adj = 0, at = -0.15)
+
+boxplot(cbind("Houseman" = house450k.all[,1], "methylCC" = hicks450k.all[,1]), 
+        main = "Simulated data from 450k platform", ylim=c(0.02, 0.09), 
+        xlab="Cell composition estimation method", 
+        ylab = "RMSE", cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5)
+mtext(text = "B", side = 3, line = 0, cex = 2, adj = 0, at = 0.05)
+boxplot(cbind("Houseman" = housebs.all[,1], "methylCC" = hicksbs.all[,1]), 
+        main = "Simulated data from RRBS platform", ylim=c(0.02, 0.09), 
+        xlab="Cell composition estimation method", 
+        ylab = "RMSE", cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5)
+mtext(text = "C", side = 3, line = 0, cex = 2, adj = 0, at = 0.05)
+dev.off()
+
+```
+

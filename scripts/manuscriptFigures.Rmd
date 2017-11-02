@@ -1,0 +1,508 @@
+---
+title: "Manuscript Figures"
+output: html_document
+---
+
+Load libraries and helper functions
+
+```{r loadLibraries}
+library(ggplot2)
+library(cowplot)
+library(tidyr)
+library(dplyr)
+library(minfi)
+library(quadprog)
+library(methylCC) # on Github
+
+# modified function from minfi::estimateCellCounts() to return 600 Houseman CpGs
+estimateCellCounts.modified <- function (rgSet, compositeCellType = "Blood", 
+                                         processMethod = "auto", probeSelect = "auto",
+                                cellTypes = c("CD8T","CD4T", "NK","Bcell","Mono","Gran"),
+                                referencePlatform = c("IlluminaHumanMethylation450k",
+                                                      "IlluminaHumanMethylationEPIC",
+                                                      "IlluminaHumanMethylation27k"),
+                                returnAll = FALSE, meanPlot = FALSE, verbose=TRUE, ...) {
+    
+    minfi:::.isRGOrStop(rgSet)
+    rgSet <- as(rgSet, "RGChannelSet")
+    referencePlatform <- match.arg(referencePlatform)
+    rgPlatform <- sub("IlluminaHumanMethylation", "", annotation(rgSet)[which(names(annotation(rgSet))=="array")])
+    platform <- sub("IlluminaHumanMethylation", "", referencePlatform)
+    if((compositeCellType == "CordBlood") && (!"nRBC" %in% cellTypes))
+        message("[estimateCellCounts] Consider including 'nRBC' in argument 'cellTypes' for cord blood estimation.\n")   
+    referencePkg <- sprintf("FlowSorted.%s.%s", compositeCellType, platform)
+    subverbose <- max(as.integer(verbose) - 1L, 0L)
+    if(!require(referencePkg, character.only = TRUE))
+        stop(sprintf("Could not find reference data package for compositeCellType '%s' and referencePlatform '%s' (inferred package name is '%s')",
+                     compositeCellType, platform, referencePkg))
+    data(list = referencePkg) 
+    referenceRGset <- get(referencePkg)
+    if(rgPlatform != platform) {
+        rgSet <- convertArray(rgSet, outType = referencePlatform, verbose = subverbose)
+    }
+    if(! "CellType" %in% names(colData(referenceRGset)))
+        stop(sprintf("the reference sorted dataset (in this case '%s') needs to have a phenoData column called 'CellType'"),
+             names(referencePkg))
+    if(sum(colnames(rgSet) %in% colnames(referenceRGset)) > 0)
+        stop("the sample/column names in the user set must not be in the reference data ")
+    if(!all(cellTypes %in% referenceRGset$CellType))
+        stop(sprintf("all elements of argument 'cellTypes' needs to be part of the reference phenoData columns 'CellType' (containg the following elements: '%s')",
+                     paste(unique(referenceRGset$cellType), collapse = "', '")))
+    if(length(unique(cellTypes)) < 2)
+        stop("At least 2 cell types must be provided.")
+    if ((processMethod == "auto") && (compositeCellType %in% c("Blood", "DLPFC")))
+        processMethod <- "preprocessQuantile"
+    if ((processMethod == "auto") && (!compositeCellType %in% c("Blood", "DLPFC")))
+        processMethod <- "preprocessNoob"
+    processMethod <- get(processMethod)
+    if ((probeSelect == "auto") && (compositeCellType == "CordBlood")){
+        probeSelect <- "any"} 
+    if ((probeSelect == "auto") && (compositeCellType != "CordBlood")){
+        probeSelect <- "both"}
+    
+    if(verbose) message("[estimateCellCounts] Combining user data with reference (flow sorted) data.\n")
+    newpd <- DataFrame(sampleNames = c(colnames(rgSet), colnames(referenceRGset)),
+                       studyIndex = rep(c("user", "reference"),
+                                        times = c(ncol(rgSet), ncol(referenceRGset))),
+                       stringsAsFactors = FALSE)
+    referencePd <- colData(referenceRGset)
+    combinedRGset <- combineArrays(rgSet, referenceRGset, outType = "IlluminaHumanMethylation450k")
+    colData(combinedRGset) <- newpd
+    colnames(combinedRGset) <- newpd$sampleNames
+    rm(referenceRGset)
+    
+    if(verbose) message("[estimateCellCounts] Processing user and reference data together.\n")
+    if (compositeCellType == "CordBlood"){
+        ## Here Shan wants to discard probes that they have decided shouldn't be used, for example multi-mapping probes
+        ## This is done by only using probes with names in the comptable.
+        ## This is kind of ugly, and dataset dependent.
+        combinedMset <- processMethod(combinedRGset, verbose=subverbose)
+        compTable <- get(paste0(referencePkg, ".compTable"))
+        combinedMset <- combinedMset[which(rownames(combinedMset) %in% rownames(compTable)),]
+    } else {
+        combinedMset <- processMethod(combinedRGset) 
+    }
+    rm(combinedRGset)
+    
+    ## Extracts normalized reference data 
+    referenceMset <- combinedMset[, combinedMset$studyIndex == "reference"]
+    colData(referenceMset) <- as(referencePd, "DataFrame")
+    mSet <- combinedMset[, combinedMset$studyIndex == "user"]
+    colData(mSet) <- as(colData(rgSet), "DataFrame")
+    rm(combinedMset)
+    
+    if(verbose) message("[estimateCellCounts] Picking probes for composition estimation.\n")
+    compData <- minfi:::pickCompProbes(referenceMset, cellTypes = cellTypes, compositeCellType = compositeCellType, probeSelect = probeSelect)
+    coefs <- compData$coefEsts
+    rm(referenceMset)
+    
+    if(verbose) message("[estimateCellCounts] Estimating composition.\n")
+    counts <- minfi:::projectCellType(getBeta(mSet)[rownames(coefs), ], coefs)
+    rownames(counts) <- colnames(rgSet)
+    
+    if (meanPlot) {
+        smeans <- compData$sampleMeans
+        smeans <- smeans[order(names(smeans))]
+        sampleMeans <- c(colMeans(getBeta(mSet)[rownames(coefs), ]), smeans)
+        
+        sampleColors <- c(rep(1, ncol(mSet)), 1 + as.numeric(factor(names(smeans))))
+        plot(sampleMeans, pch = 21, bg = sampleColors)
+        legend("bottomleft", c("blood", levels(factor(names(smeans)))),
+               col = 1:7, pch = 15)
+    }
+    if(returnAll) {
+        list(counts = counts, coefs = coefs, compTable = compData$compTable,
+             normalizedData = mSet)
+    } else {
+        counts
+    }
+}
+
+```
+
+
+# Figure 1
+
+### Load Carmona et al. (2017) data
+
+```{r loadData-Carmona}
+# load libraries
+library(tidyr)
+library(dplyr)
+library(minfi)
+library(bsseq)
+library(GenomicRanges)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromCarmona-RRBS-450k"
+
+# load 450K data
+load(file.path(dataPath, "mset450krawall.RData"))
+mset450krawall <- updateObject(mset450krawall)
+RGset_target450k <- mset450krawall
+rm(mset450krawall)
+
+# This is needed to run the estimateCellCounts.modified() function
+colData(RGset_target450k)$Sentrix_Position <- as.character(colData(RGset_target450k)$Sentrix_Position)
+
+# add ID to pData()
+library(stringr)
+newnames <- sapply(pData(RGset_target450k)$sampleID, function(x){
+  str_split(x, pattern = "_")[[1]][1] })
+newnames[1:3] <- "D07"      # these are three tech reps from same individual
+pData(RGset_target450k)$ID <- newnames
+
+# create target450k datasets
+Mset_target450k <- preprocessIllumina(RGset_target450k)
+Mset_target450k <- mapToGenome(Mset_target450k, mergeManifest = FALSE)
+
+pd_target450k = as.data.frame(pData(Mset_target450k))
+p_target450k = getBeta(Mset_target450k , type = "Illumina")
+gr_target450k <- granges(Mset_target450k)
+
+mcols(gr_target450k) <- p_target450k
+
+# load RRBS data
+load(file.path(dataPath, "bsseqkrawall.RData")) # loads BS object
+
+cvg_targetbs <- as.data.frame(getBSseq(BS, type = "Cov"))
+M_targetbs <- as.data.frame(getBSseq(BS, type = "M"))
+p_targetbs <- as.data.frame(getMeth(BS, type="raw")) # meth / cvg
+p_targetbs <- as.data.frame(p_targetbs)
+pd_targetbs <- pData(BS)
+gr_targetbs <- granges(BS)
+mcols(gr_targetbs) <- p_targetbs
+
+```
+
+### Process Carmona et al. (2017) data
+
+```{r Houseman-Carmona}
+library(tidyr)
+library(dplyr)
+library(minfi)
+library(bsseq)
+library(quadprog)
+library(GenomicRanges)
+library(FlowSorted.Blood.450k)
+data("FlowSorted.Blood.450k")
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromCarmona-RRBS-450k"
+
+# run estimateCellCounts.modified() on 450k samples (returns 600 Houseman CpGs)
+results.450k.Houseman <- estimateCellCounts.modified(RGset_target450k, returnAll = TRUE)
+counts.450k.Houseman <- results.450k.Houseman$counts / rowSums(results.450k.Houseman$counts)
+rownames(counts.450k.Houseman) <- pData(RGset_target450k)$sampleID
+counts.450k.Houseman = data.frame("Tcell" = rowSums(counts.450k.Houseman[,1:3]), 
+                                  counts.450k.Houseman[,c(4,5,6)])
+# write.csv(counts.450K.Houseman, file = file.path(dataPath, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"),
+#           row.names = TRUE)
+# counts.450k.Houseman <- read.csv(file.path(dataPath, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"), 
+#                        row.names = 1)
+df.450k.Houseman = gather(cbind("samples" = pData(RGset_target450k)$sampleID , 
+                                "ID" = pData(RGset_target450k)$ID , counts.450k.Houseman), 
+                          celltype, est, -samples, -ID)
+
+# load 600 Houseman CpGs from estimateCellCounts.modified()
+gr_600CpGs <- granges(Mset_target450k)[rownames(results.450k.Houseman$coefs),]  
+findOverlaps(granges(BS), gr_600CpGs) # only 91/600 CpGs overlap between RRBS and 450K sample (600 CpGs)
+
+keepDMRs = methylCC:::pickTargetPositions(targetgRanges = gr_targetbs, targetObject = M_targetbs,
+                                         targetCVG = cvg_targetbs, dmpRegions = gr_600CpGs)
+x <- findOverlaps(granges(BS), gr_600CpGs) # which of the 600 probes overlap with the RRBS data
+
+coefs <- results.450k.Houseman$coefs[subjectHits(x), ] # dim(coefs) = 91 x 6
+counts.RRBS.Houseman <- minfi:::projectCellType(as.data.frame(mcols(keepDMRs$dmpGRanges)), coefs)
+counts.RRBS.Houseman = data.frame("Tcell" = rowSums(counts.RRBS.Houseman[,1:3]), counts.RRBS.Houseman[,c(4,5,6)])
+counts.RRBS.Houseman <- counts.RRBS.Houseman / rowSums(counts.RRBS.Houseman)
+# write.csv(counts.RRBS.Houseman, file = file.path(dataPath, "cellCountsEsts/rrbs_minfi-projectCellType.csv"),
+#           row.names = TRUE)
+# counts.RRBS.Houseman <- read.csv(file.path(dataPath, "cellCountsEsts/rrbs_minfi-projectCellType.csv"), 
+#                                  row.names = 1)
+df.RRBS.Houseman = gather(cbind("samples" = rownames(counts.RRBS.Houseman), 
+                                "ID" = pData(BS)$ID, counts.RRBS.Houseman), 
+                          celltype, est, -samples, -ID)
+```
+
+### Create Figure 1
+
+```{r Figure1-Carmona}
+library(ggplot2)
+library(cowplot)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromCarmona-RRBS-450k"
+
+dfcombined <- full_join(df.450k.Houseman, df.RRBS.Houseman, by = c("ID", "celltype"))
+dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
+
+# colored by cell type
+gmat <- ggplot(dfcombined, aes(x=est.x, y = est.y, color = celltype)) + 
+  geom_point(size=3) + geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+  xlab("450K platform") + ylab("RRBS platform") + 
+  scale_color_discrete(name = "Cell type") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms (Houseman method)")
+
+pdf(file.path(dataPath, "figs/Figure1.pdf"), width = 6, height = 6)
+print(gmat)
+dev.off()
+```
+
+# Figure 2
+
+
+
+# Figure 3
+
+
+
+# Figure 4
+
+```{r Figure4}
+library(GenomicRanges)
+library(rafalib)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC"
+
+library(methylCC)
+data("celltypeSpecificDMRegions")
+dat <- as.data.frame(mcols(celltypeSpecificDMRegions))
+dat <- as.data.frame(dat[,c(2,1,3,4)])
+
+pdf(file.path(dataPath, "Figure4.pdf"), width = 5, height = 6)
+imagemat(dat[with(dat, order(-Bcell, -Tcell, -Mono, -Gran)), ], 
+         main = "Cell type-specific DNAm profiles\nMethylated (black), Unmethylated (white)", 
+         ylab = "Regions (R=212)", xlab = "Cell types", xaxt = "n", 
+         cex.axis = 1.3, cex.lab = 1.3, cex.main = 1.3)
+axis(1, at=1:4,labels=colnames(dat), 
+     cex.axis = 1.3, cex.lab = 1.3, cex.main = 1.3)
+dev.off()
+```
+
+# Figure 5
+
+### Process Carmona et al. (2017) data
+
+```{r estimateCC-Carmona}
+
+# run methylCC::estimateCC() on 450k samples
+est <- methylCC::estimateCC(object = RGset_target450k, verbose = TRUE, epsilon = 0.1,
+                             maxIter = 100)
+counts.450k.Hicks <- cellcounts(est)
+rownames(counts.450k.Hicks) <- colnames(RGset_target450k)
+# write.csv(counts.450k.Hicks, file = file.path(dataPath, "cellCountsEsts/450k_methylCC-estimateCC.csv"),
+#           row.names = TRUE)
+# counts.450k.Hicks <- read.csv(file.path(dataPath, "cellCountsEsts/450k_methylCC-estimateCC.csv"), 
+#                        row.names = 1)
+
+df.450k.Hicks = gather(cbind("samples" = pData(RGset_target450k)$sampleID, 
+                              "ID" = pData(RGset_target450k)$ID, counts.450k.Hicks),
+                       celltype, est, -samples, -ID)
+
+# run methylCC::estimateCC() on RRBS data
+est <- methylCC::estimateCC(object = BS, verbose = TRUE, epsilon = 0.1, maxIter = 100)
+counts.RRBS.Hicks <- cellcounts(est)
+# write.csv(counts.RRBS.Hicks,
+#           file = file.path(dataPath, "cellCountsEsts/rrbs_methylCC-estimateCC.csv"),
+#           row.names = TRUE)
+# counts.RRBS.Hicks <- read.csv(file.path(dataPath,
+#                                         "cellCountsEsts/rrbs_methylCC-estimateCC-old.csv"), 
+#                               row.names = 1)
+
+```
+
+### Create Figure 5
+
+```{r Figure5-Carmona}
+# combine
+df.RRBS.Hicks = gather(cbind("samples" = rownames(counts.RRBS.Houseman), 
+                             "ID" = pData(BS)$ID, counts.RRBS.Hicks), 
+                       celltype, est, -samples, -ID)
+
+dfcombined.450k <- full_join(df.450k.Houseman, df.450k.Hicks, by = c("samples", "celltype"))  
+dfcombined.450k$celltype <- factor(dfcombined.450k$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
+
+z.450k <- rbind(data.frame("Method" = rep("Houseman", nrow(df.450k.Houseman)), 
+                      df.450k.Houseman), 
+           data.frame("Method" = rep("methylCC", nrow(df.450k.Hicks)), 
+                      df.450k.Hicks))
+
+z.rrbs <- rbind(data.frame("Method" = rep("Houseman", nrow(df.RRBS.Houseman)), 
+                      df.RRBS.Houseman), 
+           data.frame("Method" = rep("methylCC", nrow(df.RRBS.Hicks)), 
+                      df.RRBS.Hicks))
+
+df.all <- full_join(z.450k, z.rrbs, by = c("Method", "ID", "celltype")) 
+df.all$celltype <- factor(df.all$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
+df.all$Method <- factor(df.all$Method, levels = c("Houseman", "methylCC"))
+
+gmat <- ggplot(df.all, aes(x=est.x, y = est.y, color = celltype)) + 
+  facet_wrap(~Method) + geom_point(size=3) + 
+  geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+  xlab("450K platform") + ylab("RRBS platform") + 
+  scale_color_discrete(name = "Cell type") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms")
+
+pdf(file.path(dataPath, "figs/Figure5.pdf"), width = 8, height = 5)
+print(gmat)
+dev.off()
+```
+
+
+# Figure S1
+
+Code for Figure S1 can be found under [scripts/simulationStudy.Rmd](). 
+
+
+# Figure S2
+
+### Download Liu et al. (2013) data from GEO 
+
+Run script on odyssey. 
+
+```{r downloadData-Liu}
+# load libraries
+library(minfi)
+library(bsseq)
+library(GenomicRanges)
+library(GEOquery)
+
+dataPath <- "/net/irizarryfs01/srv/export/irizarryfs01_backed_up/share_root/shicks/projects/methylCC/dataFromLiu2013"
+workingDir_Liu2013 <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/GEO/GSE42861"
+setwd(workingDir_Liu2013)
+
+message("[dataFromLiu2013-450k] Loading 450k data.")
+
+# # download all supplemental files (including CEL files)
+# getGEOSuppFiles("GSE42861", makeDirectory = TRUE, baseDir = workingDir_Liu2013)
+# untar("GSE42861/GSE42861_RAW.tar", exdir="GSE42861/GSE42861_RAW")
+# cels <- list.files(file.path(workingDir_Liu2013, "GSE42861_RAW/"), pattern = ".idat")
+tmp = paste0("GSE42861_RAW/", unique(gsub(".....idat.gz", "", cels)))
+
+message("Downloading pData.")
+gse <- getGEO("GSE42861",GSEMatrix=TRUE, destdir = workingDir_Liu2013)
+pd <- pData(gse[[1]])
+save(pd, file = file.path(workingDir_Liu2013, "pd_Liu2013.rds"))
+rm(gse)
+
+message("Creating RGset.")
+RGset <- read.metharray(file.path(workingDir_Liu2013, tmp), 
+                         extended = FALSE, verbose = FALSE, force = FALSE)
+pData(RGset) <- pd
+
+message("Saving RGset.")
+# save RGset object
+saveRDS(RGset, file=file.path(workingDir_Liu2013, "RGset_Liu2013.rds"))
+```
+
+### Process Liu et al. (2013) data
+ 
+Run script on odyssey. 
+
+```{r estimateCC-Liu}
+library(tidyr)
+library(dplyr)
+library(minfi)
+library(methylCC)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromLiu2013"
+workingDir_Liu2013 <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/GEO/GSE42861"
+
+# Load 689 samples run on 450K DNA methylation array
+RGset <- readRDS(file.path(workingDir_Liu2013, "RGset_Liu2013.rds")) 
+RGset <- updateObject(RGset)
+
+# run minfi::estimateCellCounts()
+counts.450k.Houseman <- minfi::estimateCellCounts(RGset)
+# write.csv(counts.450k.Houseman,
+#           file = file.path(dataPath, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"),
+#           row.names = TRUE)
+
+
+
+
+Mset <- preprocessIllumina(RGset)
+Mset <- mapToGenome(Mset, mergeManifest = FALSE)
+
+message("Save Mset object.")
+# saveRDS(Mset, file=file.path(workingDir_Liu2013, "Mset_Liu2013.rds"))
+# 
+# Mset <- readRDS(file=file.path(workingDir_Liu2013, "Mset_Liu2013.rds"))
+
+pd = pData(Mset)
+grObject <- granges(Mset)
+betaValues = getBeta(Mset, type = "Illumina")
+
+message("Pick Target Positions")
+keepDMRs = methylCC:::pickTargetPositions(targetgRanges=grObject, targetObject = betaValues,
+                               dmpRegions=celltypeSpecificDMRegions)$dmpGRanges
+
+zmatSub <- subsetByOverlaps(celltypeSpecificDMRegions, keepDMRs, type = "equal")
+rm(betaValues)
+
+ymat <- mcols(keepDMRs); colnames(ymat) <- sampleNames(Mset)
+rm(Mset)
+n <- ncol(mcols(keepDMRs))
+ids <- colnames(mcols(zmatSub))
+zmat <- as.matrix(as.data.frame(mcols(zmatSub)))
+
+dat <- list(ymat = ymat, n = n, ids = ids, zmat = zmat,
+     grObject = grObject, keepDMRs = keepDMRs)
+
+message("Saving methylCC Processed Data.")
+# saveRDS(dat, file=file.path(workingDir_Liu2013, "methylCCProcessed_Liu2013.rds"))
+
+
+# run methylCC::estimateCC()
+dat <- readRDS(file = file.path(workingDir_Liu2013, "methylCCProcessed_Liu2013.rds"))
+est <- estimateCC(object = as.matrix(dat$ymat), regionMat = as.matrix(dat$zmat),
+                  initParamMethod = "random", epsilon = 0.1, 
+                  verbose = TRUE, maxIter = 50)
+counts.450k.Hicks <- cellcounts(est)
+# write.csv(counts.450k.Hicks,
+#           file = file.path(dataPath, "cellCountsEsts/450k_methylCC-estimateCC.csv"),
+#           row.names = TRUE)
+
+```
+
+
+### Create Figure S2 
+
+```{r FigureS2-Liu}
+library(ggplot2)
+library(cowplot)
+library(tidyr)
+library(dplyr)
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromLiu2013"
+workingDir_Liu2013 <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/GEO/GSE42861"
+
+# load minfi::estimateCellCounts() estimates
+counts.450k.Houseman <- read.csv(file.path(dataPath, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"), 
+                                 row.names = 1)
+counts.450k.Houseman$Tcell <- rowSums(counts.450k.Houseman[,1:3])
+counts.450k.Houseman <- counts.450k.Houseman[,c(7,4:6)]
+df.Houseman <- gather(cbind("samples" = rownames(counts.450k.Houseman), counts.450k.Houseman), celltype, est, -samples)
+
+# load methylCC::estimateCC() estimates
+counts.450k.Hicks <- read.csv(file.path(dataPath, "cellCountsEsts/450k_methylCC-estimateCC.csv"),  
+                              row.names = 1)
+df.Hicks <- gather(cbind("samples" = rownames(counts.450k.Hicks), counts.450k.Hicks), celltype, est, -samples)
+
+dfcombined <- full_join(df.Houseman, df.Hicks,  by = c("samples", "celltype"))
+dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
+
+gmat <- dfcombined %>% 
+  ggplot(aes(x=est.x, y = est.y, color = celltype)) + 
+    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+    scale_color_discrete(name = "Cell type") +
+    geom_point() + theme(legend.position = "top", legend.justification= "center") + 
+    xlab("Houseman method") + ylab("methylCC") + 
+    labs(title = "Model-based cell composition estimates from\nwhole blood samples (N=689, Li et al. 2013)")
+
+pdf(file.path(dataPath, "figs/FigureS2.pdf"), width = 6, height = 6)
+print(gmat)
+dev.off()
+```
+
+
