@@ -351,7 +351,7 @@ dev.off()
 
 # Figure S1
 
-Code for Figure S1 can be found under [scripts/simulationStudy.Rmd](). 
+Code for Figure S1 can be found at [`scripts/simulationStudy.Rmd`](https://github.com/stephaniehicks/methylCCPaper/blob/master/scripts/simulationStudy.Rmd). 
 
 
 # Figure S2

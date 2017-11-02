@@ -18,6 +18,6 @@ All data used in this manuscript is publicly available. Here are links on how to
 
 Here are links to the code, helper files and data analyses for all figures and supplemental figures in the manuscript. 
 
-* [Figures in the manuscript]().  
-* [Figures for simulation study]()
+* [Figures in the manuscript](https://github.com/stephaniehicks/methylCCPaper/blob/master/scripts/manuscriptFigures.Rmd).  
+* [Figures for simulation study](https://github.com/stephaniehicks/methylCCPaper/blob/master/scripts/simulationStudy.Rmd)
 
