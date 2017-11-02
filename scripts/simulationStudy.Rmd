@@ -12,9 +12,9 @@ platform-dependent random effects ($X_k$ matrices)
 with different mean methylation levels 
 (alpha0, alpha1, sig0, sig1) varying across two platforms. 
 These matricies are used for all simulated samples in Step 2. 
-2. For a given DNAm sample (1 to `nSamples` e.g. 100), 
-  a. Simulate a true cell composition $\pi$. 
-  b. Simulate a 450k array sample (Y450k = X450k * pi + err) 
+2. For a given DNAm sample (1 to `nSamples` e.g. 100) 
+  - Simulate a true cell composition $\pi$. 
+  - Simulate a 450k array sample (Y450k = X450k * pi + err) 
      and RRBS sample (Ybs = Xbs * pi + err)
 3. Estimate cell composition 450k and RRBS samples using 
 Houseman and methylCC methods. Scale cell composition
