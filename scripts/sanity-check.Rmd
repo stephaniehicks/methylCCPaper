@@ -1,0 +1,59 @@
+---
+title: "2019-05-FindBetterDMRs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(FlowSorted.Blood.450k)
+library(rafalib)
+library(limma)
+library(bumphunter)
+library(here)
+
+workingDir_blsa2017 <- here("case-studies", "2017-blsa-450-cellsort")
+
+workingDir_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
+savePath <- "/users/shicks1/projects/methylCC/scripts/data"
+figPath <- "/users/shicks1/projects/methylCC/figures/celltypespecificDMRegions"
+
+# FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k)
+# Mset_train450k <- preprocessQuantile(FlowSorted.Blood.450k)
+# Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
+# save(Mset_train450k, file=file.path(workingDir_flowSort, "FlowSorted-Mset-Quantile.rda"))
+load(file.path(workingDir_flowSort, "FlowSorted-Mset-Quantile.rda"))
+
+Mset_train450k
+
+## see methylCC::findDMRs() to load function
+
+output <- findDMRs(Mset_train450k, verbose = TRUE, pairwiseComparison = FALSE)
+table(duplicated(output$regions)) # 
+table(output$regions$cellType, output$regions$status)
+image(t(output$zmat))
+image(t(output$profiles))
+
+outputPair <- findDMRs(Mset_train450k, verbose = TRUE, pairwiseComparison = TRUE)
+table(duplicated(outputPair$regions))
+table(outputPair$regions$cellType, outputPair$regions$status)
+image(t(outputPair$zmat))
+image(t(outputPair$profiles))
+
+
+# sanity check
+p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
+target <- t(apply(as.data.frame(mcols(output$regions))[,1:2],1,function(ind){
+    colMeans(p[(ind[1]):(ind[2]),,drop=FALSE])
+  }))
+ 
+ 
+##quick and dirty regresion to cell counts:
+estimates <- solve(crossprod(outputPair$profiles))%*%crossprod(outputPair$profiles,target)
+t(estimates)
+image(estimates)
+```
+

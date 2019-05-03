@@ -22,7 +22,7 @@ estimates to sum to 1, if needed.
 4. Calculate $RMSE_k$ for each cell type $k$. 
 Average across cell types for mean RMSE. 
 
-### Run code on odyssey
+### Run code on JHPCE
 
 ```{r}
 library(minfi)
@@ -31,27 +31,33 @@ library(methylCC)
 library(doParallel)
 library(abind)
 library(tidyr)
+library(truncnorm)
 
-dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/simStudy"
+dataPath <- "/users/shicks1/projects/methylCC/simStudy"
 
 # Z matrix with 64 regions and 4 cell types: 0 = unmethylated, 1 = methylated
-Z = as.matrix(expand.grid(c(0,1), c(0,1), c(0,1)))
-Z = apply(Z, 2, function(x){rep(x, each=8)})
-IDs = c("Lymph","Mono","Gran")
+Z = as.matrix(expand.grid(c(0,1), c(0,1), c(0,1), c(0,1), c(0,1), c(0,1)))
+Z = Z[-c(1, 64),]
+Z = rbind(# rep(0, 6), 
+          Z[c(1,2,4,8,16,32,31,47,55,59,61,62), ])#, 
+          # rep(1, 6))
+
+Z = apply(Z, 2, function(x){rep(x, each=4)})
+IDs = c("CD8T","CD4T", "NK","Bcell","Mono","Gran")
 colnames(Z) <- IDs
 K = ncol(Z)
 R = nrow(Z)
-nSamples = 100 # number of whole blood samples
-sdtrue = 0.1
+nSamples = 40 # number of whole blood samples
+sdtrue = 0.05
 
 alpha0450k = 0.15; alpha1450k = 0.75
 sd0450k = 0.03; sd1450k = 0.04
 alpha0bs = 0.03; alpha1bs = 0.85
 sd0bs = 0.01; sd1bs = 0.03
 
-N <- 200
+N <- 20
 
-nCores = 10
+nCores = 1
 registerDoParallel(cores = nCores)
 workers <- getDoParWorkers()
 backend <- getDoParName()
@@ -72,9 +78,12 @@ simResults <- foreach(kk = 1:N) %dopar% {
   
   simResultsSub <- array(dim=c(K, 5, nSamples))
   pi.truth <- array(0, dim=c(K, nSamples))
-  pi.truth[1,] <- rbeta(nSamples, shape1 = 3, shape2 = 9) # Lymph
-  pi.truth[2,] <- rbeta(nSamples, shape1 = 4, shape2 = 39)   # Mono 
-  pi.truth[3,] <- rbeta(nSamples, shape1 = 9, shape2 = 5) # Gran
+  pi.truth[1,] <- rtruncnorm(nSamples, a = 0, mean = 0.036, sd = 0.040) # CD8T
+  pi.truth[2,] <- rtruncnorm(nSamples, a = 0, mean = 0.180, sd = 0.078) # CD4T
+  pi.truth[3,] <- rtruncnorm(nSamples, a = 0, mean = 0.076, sd = 0.052) # NK
+  pi.truth[4,] <- rtruncnorm(nSamples, a = 0, mean = 0.040, sd = 0.049) # Bcell
+  pi.truth[5,] <- rtruncnorm(nSamples, a = 0, mean = 0.095, sd = 0.031)   # Mono 
+  pi.truth[6,] <- rtruncnorm(nSamples, a = 0, mean = 0.574, sd = 0.109) # Gran
   pi.truth <- sweep(abs(pi.truth), 2, colSums(abs(pi.truth)), FUN = "/")
     
   err = matrix(rnorm(R*nSamples, mean = 0, sd = sdtrue), nrow=R, ncol=nSamples)
@@ -125,11 +134,14 @@ library(ggplot2)
 library(cowplot)
 library(tidyr)
 
-dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/simStudy"
+dataPath <- "/users/shicks1/projects/methylCC/simStudy"
+Z = as.matrix(expand.grid(c(0,1), c(0,1), c(0,1), c(0,1), c(0,1), c(0,1)))
+Z = Z[-c(1, 64),]
+Z = rbind(# rep(0, 6), 
+          Z[c(1,2,4,8,16,32,31,47,55,59,61,62), ])#, 
+          # rep(1, 6))
 
-Z = as.matrix(expand.grid(c(0,1), c(0,1), c(0,1)))
-Z = apply(Z, 2, function(x){rep(x, each=8)})
-IDs = c("Lymph","Mono","Gran")
+Z = apply(Z, 2, function(x){rep(x, each=4)})
 colnames(Z) <- IDs
 K = ncol(Z)
 R = nrow(Z)
@@ -140,7 +152,7 @@ sd0450k = 0.03; sd1450k = 0.04
 alpha0bs = 0.03; alpha1bs = 0.85
 sd0bs = 0.01; sd1bs = 0.03
 
-simResults <- readRDS(file.path(dataPath, "simData/simResults.rds")) 
+# simResults <- readRDS(file.path(dataPath, "simData/simResults.rds")) 
 nSamples <- dim(simResults)[3]  # number of whole blood samples
 N <- dim(simResults)[4] # number of MC simulations
 
@@ -160,7 +172,7 @@ for(kk in 1:N){
   hicksbs.all[kk,] <- colMeans(hicksbs)
 }
 
-pdf(file.path(dataPath, "figs/FigureS1.pdf"), width = 12, height = 4)
+# pdf(file.path(dataPath, "figs/FigureS1.pdf"), width = 12, height = 4)
 par(mfrow=c(1,3))
 xs = seq(0,1,by=0.001)
 plot(x=xs, y = dnorm(x=xs, mean = alpha0450k, sd = sd0450k), type = "l", 
@@ -177,16 +189,16 @@ legend('topright', c("450k", "RRBS"), col = 1, lty = 1:2, lwd = 3, cex = 1.5)
 mtext(text = "A", side = 3, line = 0, cex = 2, adj = 0, at = -0.15)
 
 boxplot(cbind("Houseman" = house450k.all[,1], "methylCC" = hicks450k.all[,1]), 
-        main = "Simulated data from 450k platform", ylim=c(0.02, 0.09), 
+        main = "Simulated data from 450k platform", ylim=c(0.0, 0.09), 
         xlab="Cell composition estimation method", 
         ylab = "RMSE", cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5)
 mtext(text = "B", side = 3, line = 0, cex = 2, adj = 0, at = 0.05)
 boxplot(cbind("Houseman" = housebs.all[,1], "methylCC" = hicksbs.all[,1]), 
-        main = "Simulated data from RRBS platform", ylim=c(0.02, 0.09), 
+        main = "Simulated data from RRBS platform", ylim=c(0.00, 0.09), 
         xlab="Cell composition estimation method", 
         ylab = "RMSE", cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5)
 mtext(text = "C", side = 3, line = 0, cex = 2, adj = 0, at = 0.05)
-dev.off()
+# dev.off()
 
 ```
 

@@ -18,6 +18,7 @@ library(tidyr)
 library(dplyr)
 library(rafalib)
 library(minfi)
+library(bsseq)
 library(quadprog)
 library(methylCC)
 library(GenomicRanges)
@@ -138,10 +139,9 @@ gg_color_hue <- function(n) {
   hcl(h=hues, l=65, c=100)[1:n]
 }
 
-dataPathProject <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC"
-dataPathCarmona <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromCarmona-RRBS-450k"
-dataPathLiu <- "n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromLiu2013"
-workingDir_Liu2013 <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/GEO/GSE42861"
+dataPathProject <- "/users/shicks1/projects/methylCC"
+dataPathCarmona <- "/users/shicks1/projects/methylCC/dataFromCarmona-RRBS-450k"
+dataPathLiu <- "/users/shicks1/projects/methylCC/dataFromLiu2013"
 
 ```
 
@@ -164,8 +164,8 @@ colData(RGset_target450k)$Sentrix_Position <- as.character(colData(RGset_target4
 library(stringr)
 newnames <- sapply(pData(RGset_target450k)$sampleID, function(x){
   str_split(x, pattern = "_")[[1]][1] })
-newnames[1:3] <- "D07"      # these are three tech reps from same individual
 pData(RGset_target450k)$ID <- newnames
+RGset_target450k <- RGset_target450k[, !(pData(RGset_target450k)$ID %in% "D07repC")]
 
 # create target450k datasets
 Mset_target450k <- preprocessIllumina(RGset_target450k)
@@ -178,7 +178,7 @@ gr_target450k <- granges(Mset_target450k)
 mcols(gr_target450k) <- p_target450k
 
 # load RRBS data
-load(file.path(dataPathCarmona, "bsseqkrawall.RData")) # loads BS object
+BS <- readRDS(file.path(dataPathCarmona, "bsseqkrawall.RDS"))
 
 cvg_targetbs <- as.data.frame(getBSseq(BS, type = "Cov"))
 M_targetbs <- as.data.frame(getBSseq(BS, type = "M"))
@@ -197,15 +197,67 @@ mcols(gr_targetbs) <- p_targetbs
 results.450k.Houseman <- estimateCellCounts.modified(RGset_target450k, returnAll = TRUE)
 counts.450k.Houseman <- results.450k.Houseman$counts / rowSums(results.450k.Houseman$counts)
 rownames(counts.450k.Houseman) <- pData(RGset_target450k)$sampleID
+
+# write.csv(counts.450K.Houseman, file = file.path(dataPathCarmona, "cellcounts/450k_minfi-estimateCellCounts.csv"),
+#           row.names = TRUE)
+# counts.450k.Houseman <- read.csv(file.path(dataPathCarmona, "cellcounts/450k_minfi-estimateCellCounts.csv"),
+#                        row.names = 1)
+df.450k.Houseman = gather(cbind("samples" = pData(RGset_target450k)$sampleID, counts.450k.Houseman),
+                                "ID" = pData(RGset_target450k)$ID,  
+                          celltype, est, -samples)
+
+# load 600 Houseman CpGs from estimateCellCounts.modified()
+gr_600CpGs <- granges(Mset_target450k)[rownames(results.450k.Houseman$coefs),]  
+findOverlaps(granges(BS), gr_600CpGs) # only 91/600 CpGs overlap between RRBS and 450K sample (600 CpGs)
+
+keepDMRs = methylCC:::pickTargetPositions(targetgRanges = gr_targetbs, targetObject = M_targetbs,
+                                         targetCVG = cvg_targetbs, dmpRegions = gr_600CpGs)
+x <- findOverlaps(granges(BS), gr_600CpGs) # which of the 600 probes overlap with the RRBS data
+
+coefs <- results.450k.Houseman$coefs[subjectHits(x), ] # dim(coefs) = 91 x 6
+counts.RRBS.Houseman <- minfi:::projectCellType(as.data.frame(mcols(keepDMRs$dmpGRanges)), coefs)
+counts.RRBS.Houseman <- counts.RRBS.Houseman / rowSums(counts.RRBS.Houseman)
+rownames(counts.RRBS.Houseman)[11] <- "D07repA"
+rownames(counts.RRBS.Houseman)[12] <- "D07repB"
+# write.csv(counts.RRBS.Houseman, file = file.path(dataPathCarmona, "cellcounts/rrbs_minfi-projectCellType.csv"),
+#           row.names = TRUE)
+# counts.RRBS.Houseman <- read.csv(file.path(dataPathCarmona, "cellcounts/rrbs_minfi-projectCellType.csv"), 
+#                                  row.names = 1)
+df.RRBS.Houseman = gather(cbind("samples" = rownames(counts.RRBS.Houseman), 
+                                counts.RRBS.Houseman), 
+                          celltype, est, -samples)
+```
+
+Try comparing estimates from only using 91 out of 600 CpGs
+```{r Houseman-Carmona-test}
+# run estimateCellCounts.modified() on 450k samples (returns 600 Houseman CpGs)
+# results.450k.Houseman <- estimateCellCounts.modified(RGset_target450k, returnAll = TRUE)
+gr_600CpGs <- granges(Mset_target450k)[rownames(results.450k.Houseman$coefs),]  
+findOverlaps(granges(BS), gr_600CpGs) # only 91/600 CpGs overlap between RRBS and 450K sample (600 CpGs)
+
+keepDMRs = methylCC:::pickTargetPositions(targetgRanges = gr_targetbs, targetObject = M_targetbs,
+                                         targetCVG = cvg_targetbs, dmpRegions = gr_600CpGs)
+x <- findOverlaps(granges(BS), gr_600CpGs) # which of the 600 probes overlap with the RRBS data
+
+coefs <- results.450k.Houseman$coefs[subjectHits(x), ] # dim(coefs) = 91 x 6
+counts.RRBS.Houseman <- minfi:::projectCellType(as.data.frame(mcols(keepDMRs$dmpGRanges)), coefs)
+counts.RRBS.Houseman = data.frame("Tcell" = rowSums(counts.RRBS.Houseman[,1:3]), counts.RRBS.Houseman[,c(4,5,6)])
+counts.RRBS.Houseman <- counts.RRBS.Houseman / rowSums(counts.RRBS.Houseman)
+rownames(counts.RRBS.Houseman)[11] <- "D07repA"
+rownames(counts.RRBS.Houseman)[12] <- "D07repB"
+
+
+counts.450k.Houseman <- results.450k.Houseman$counts / rowSums(results.450k.Houseman$counts)
+rownames(counts.450k.Houseman) <- pData(RGset_target450k)$sampleID
 counts.450k.Houseman = data.frame("Tcell" = rowSums(counts.450k.Houseman[,1:3]), 
                                   counts.450k.Houseman[,c(4,5,6)])
 # write.csv(counts.450K.Houseman, file = file.path(dataPathCarmona, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"),
 #           row.names = TRUE)
-# counts.450k.Houseman <- read.csv(file.path(dataPathCarmona, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"), 
+# counts.450k.Houseman <- read.csv(file.path(dataPathCarmona, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"),
 #                        row.names = 1)
-df.450k.Houseman = gather(cbind("samples" = pData(RGset_target450k)$sampleID , 
-                                "ID" = pData(RGset_target450k)$ID , counts.450k.Houseman), 
-                          celltype, est, -samples, -ID)
+df.450k.Houseman = gather(cbind("samples" = pData(RGset_target450k)$sampleID, counts.450k.Houseman),
+                                #"ID" = pData(RGset_target450k)$ID,  
+                          celltype, est, -samples)
 
 # load 600 Houseman CpGs from estimateCellCounts.modified()
 gr_600CpGs <- granges(Mset_target450k)[rownames(results.450k.Houseman$coefs),]  
@@ -219,19 +271,23 @@ coefs <- results.450k.Houseman$coefs[subjectHits(x), ] # dim(coefs) = 91 x 6
 counts.RRBS.Houseman <- minfi:::projectCellType(as.data.frame(mcols(keepDMRs$dmpGRanges)), coefs)
 counts.RRBS.Houseman = data.frame("Tcell" = rowSums(counts.RRBS.Houseman[,1:3]), counts.RRBS.Houseman[,c(4,5,6)])
 counts.RRBS.Houseman <- counts.RRBS.Houseman / rowSums(counts.RRBS.Houseman)
-# write.csv(counts.RRBS.Houseman, file = file.path(dataPathCarmona, "cellCountsEsts/rrbs_minfi-projectCellType.csv"),
+rownames(counts.RRBS.Houseman)[11] <- "D07repA"
+rownames(counts.RRBS.Houseman)[12] <- "D07repB"
+# write.csv(counts.RRBS.Houseman, file = file.path(dataPathCarmona, "cellcounts/rrbs_minfi-projectCellType.csv"),
 #           row.names = TRUE)
-# counts.RRBS.Houseman <- read.csv(file.path(dataPathCarmona, "cellCountsEsts/rrbs_minfi-projectCellType.csv"), 
+# counts.RRBS.Houseman <- read.csv(file.path(dataPathCarmona, "cellcounts/rrbs_minfi-projectCellType.csv"), 
 #                                  row.names = 1)
 df.RRBS.Houseman = gather(cbind("samples" = rownames(counts.RRBS.Houseman), 
-                                "ID" = pData(BS)$ID, counts.RRBS.Houseman), 
-                          celltype, est, -samples, -ID)
+                                counts.RRBS.Houseman), 
+                          celltype, est, -samples)
 ```
+
+
 
 ### Create Figure 1
 
 ```{r create-Figure1-Carmona}
-dfcombined <- full_join(df.450k.Houseman, df.RRBS.Houseman, by = c("ID", "celltype"))
+dfcombined <- full_join(df.450k.Houseman, df.RRBS.Houseman, by = c("samples", "celltype"))
 dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
 
 # colored by cell type
@@ -436,9 +492,9 @@ est <- methylCC::estimateCC(object = RGset_target450k, verbose = TRUE, epsilon =
                              maxIter = 100)
 counts.450k.Hicks <- cellcounts(est)
 rownames(counts.450k.Hicks) <- colnames(RGset_target450k)
-# write.csv(counts.450k.Hicks, file = file.path(dataPathCarmona, "cellCountsEsts/450k_methylCC-estimateCC.csv"),
+# write.csv(counts.450k.Hicks, file = file.path(dataPathCarmona, "cellcounts/450k_methylCC-estimateCC.csv"),
 #           row.names = TRUE)
-# counts.450k.Hicks <- read.csv(file.path(dataPathCarmona, "cellCountsEsts/450k_methylCC-estimateCC.csv"), 
+# counts.450k.Hicks <- read.csv(file.path(dataPathCarmona, "cellcounts/450k_methylCC-estimateCC.csv"), 
 #                        row.names = 1)
 
 df.450k.Hicks = gather(cbind("samples" = pData(RGset_target450k)$sampleID, 
@@ -449,10 +505,10 @@ df.450k.Hicks = gather(cbind("samples" = pData(RGset_target450k)$sampleID,
 est <- methylCC::estimateCC(object = BS, verbose = TRUE, epsilon = 0.1, maxIter = 100)
 counts.RRBS.Hicks <- cellcounts(est)
 # write.csv(counts.RRBS.Hicks,
-#           file = file.path(dataPathCarmona, "cellCountsEsts/rrbs_methylCC-estimateCC.csv"),
+#           file = file.path(dataPathCarmona, "cellcounts/rrbs_methylCC-estimateCC.csv"),
 #           row.names = TRUE)
 # counts.RRBS.Hicks <- read.csv(file.path(dataPathCarmona,
-#                                         "cellCountsEsts/rrbs_methylCC-estimateCC-old.csv"), 
+#                                         "cellcounts/rrbs_methylCC-estimateCC-old.csv"), 
 #                               row.names = 1)
 
 ```
@@ -504,7 +560,7 @@ Code for Figure S1 can be found at [`scripts/simulationStudy.Rmd`](https://githu
 
 ### Download Liu et al. (2013) data from GEO 
 
-Run script on odyssey. 
+Run script on JHPCE. 
 
 ```{r downloadData-Liu}
 # load libraries
@@ -513,31 +569,34 @@ library(bsseq)
 library(GenomicRanges)
 library(GEOquery)
 
-workingDir_Liu2013 <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/GEO/GSE42861"
-setwd(workingDir_Liu2013)
+workingDir_Liu2013 <- "/users/shicks1/projects/methylCC/dataFromLiu2013"
+dataPath <- "/users/shicks1/data/GEO/GSE42861"
+setwd(dataPath)
 
-message("[dataFromLiu2013-450k] Loading 450k data.")
+message("[dataFromLiu2013-450k] Downloading 450k data.")
 
 # # download all supplemental files (including CEL files)
-# getGEOSuppFiles("GSE42861", makeDirectory = TRUE, baseDir = workingDir_Liu2013)
+# dataPath <- "/users/shicks1/data/GEO"
+# setwd(dataPath)
+# getGEOSuppFiles("GSE42861", makeDirectory = TRUE, baseDir = dataPath)
 # untar("GSE42861/GSE42861_RAW.tar", exdir="GSE42861/GSE42861_RAW")
-# cels <- list.files(file.path(workingDir_Liu2013, "GSE42861_RAW/"), pattern = ".idat")
+cels <- list.files(file.path(dataPath, "GSE42861_RAW/"), pattern = ".idat")
 tmp = paste0("GSE42861_RAW/", unique(gsub(".....idat.gz", "", cels)))
 
 message("Downloading pData.")
-gse <- getGEO("GSE42861",GSEMatrix=TRUE, destdir = workingDir_Liu2013)
+gse <- getGEO("GSE42861",GSEMatrix=TRUE, destdir = dataPath)
 pd <- pData(gse[[1]])
-save(pd, file = file.path(workingDir_Liu2013, "pd_Liu2013.rds"))
+save(pd, file = file.path(dataPath, "pd_Liu2013.rds"))
 rm(gse)
 
 message("Creating RGset.")
-RGset <- read.metharray(file.path(workingDir_Liu2013, tmp), 
+RGset <- read.metharray(file.path(dataPath, tmp), 
                          extended = FALSE, verbose = FALSE, force = FALSE)
 pData(RGset) <- pd
 
 message("Saving RGset.")
 # save RGset object
-saveRDS(RGset, file=file.path(workingDir_Liu2013, "RGset_Liu2013.rds"))
+saveRDS(RGset, file=file.path(dataPath, "RGset_Liu2013.rds"))
 ```
 
 ### Process Liu et al. (2013) data
@@ -550,8 +609,8 @@ library(dplyr)
 library(minfi)
 library(methylCC)
 
-dataPathLiu <- "/n/irizarryfs01_backed_up/shicks/projects/methylCC/dataFromLiu2013"
-workingDir_Liu2013 <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/GEO/GSE42861"
+workingDir_Liu2013 <- "/users/shicks1/projects/methylCC/dataFromLiu2013"
+dataPath <- "/users/shicks1/data/GEO/GSE42861"
 
 # Load 689 samples run on 450K DNA methylation array
 RGset <- readRDS(file.path(workingDir_Liu2013, "RGset_Liu2013.rds")) 
@@ -560,7 +619,7 @@ RGset <- updateObject(RGset)
 # run minfi::estimateCellCounts()
 counts.450k.Houseman <- minfi::estimateCellCounts(RGset)
 # write.csv(counts.450k.Houseman,
-#           file = file.path(dataPathLiu, "cellCountsEsts/450k_minfi-estimateCellCounts.csv"),
+#           file = file.path(dataPathLiu, "cellcounts/450k_minfi-estimateCellCounts.csv"),
 #           row.names = TRUE)
 
 Mset <- preprocessIllumina(RGset)
@@ -602,7 +661,7 @@ est <- estimateCC(object = as.matrix(dat$ymat), regionMat = as.matrix(dat$zmat),
                   verbose = TRUE, maxIter = 50)
 counts.450k.Hicks <- cellcounts(est)
 # write.csv(counts.450k.Hicks,
-#           file = file.path(dataPathLiu, "cellCountsEsts/450k_methylCC-estimateCC.csv"),
+#           file = file.path(dataPathLiu, "cellcounts/450k_methylCC-estimateCC.csv"),
 #           row.names = TRUE)
 ```
 
