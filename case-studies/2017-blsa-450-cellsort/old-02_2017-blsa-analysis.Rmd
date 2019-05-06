@@ -1,0 +1,141 @@
+---
+title: "dataBLSA_knownProps450K"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(cowplot)
+library(tidyr)
+library(dplyr)
+library(minfi)
+library(quadprog)
+library(compote) # on Github
+
+# need to remove these:
+# save(Mset, file=file.path(workingDir_jhuBloodwithProp, "jhu-blood-withProp-Mset-Illumina.rda"))
+# save(M1.counts, file = file.path(workingDir_jhuBloodwithProp, "jhu-blood-withProp-M1.counts.rda"))
+
+dataPath <- "/n/irizarryfs01_backed_up/shicks/projects/compote/dataBLSA_knownProps450k"
+
+################################################
+### Target Data: 806 450K DNA methylation samples with known cell type proportions
+################################################
+
+workingDir_jhuBloodwithProp <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/jhu/jhu-blood-withProp"
+
+# Flow Sorted measured cell type proportions (806 samples)
+trueProps <- read.csv(file.path(workingDir_jhuBloodwithProp, "new_celltype.csv"), header = TRUE)
+colnames(trueProps) <- c("sampleID", "baso", "eos", "neu", "lymph", "mono")
+# Create a "Gran" column (Baso + Eos + Neu)
+trueProps$gran <- trueProps$baso + trueProps$eos + trueProps$neu
+trueProps[,-1] <- trueProps[,-1] / 100
+
+
+# Load 800 samples run on 450K DNA methylation array 
+#       with corresponding cell type proportions
+load(file.path(workingDir_jhuBloodwithProp, "RGset.rda")) # use this for minfi::estimateCellComp
+RGset <- updateObject(RGset) 
+
+# need to fix "non-forming" names
+pData(RGset)$Sex <- ifelse(pData(RGset)$Sex == 1, "M", "F")
+pData(RGset)$Slide <- as.numeric(pData(RGset)$Slide)
+
+# Need to filter: 806 samples in trueProps, but only 800 samples in RGset
+trueProps <- trueProps[match(pData(RGset)$Sample.ID, trueProps$sampleID), ]
+colnames(trueProps) <- c("samples", "Baso", "Eos", "Neu", "Lymph", "Mono", "Gran")
+
+# run minfi::estimateCellCounts() in dataBLSA.R and dataBLSA.sh scripts. 
+# counts450K <- estimateCellCounts(RGset)
+# save(counts450K, file = file.path(workingDir_jhuBloodwithProp, "jhu-blood-withProp-minfi-estimateCellCounts.rda"))
+load(file.path(workingDir_jhuBloodwithProp, "jhu-blood-withProp-minfi-estimateCellCounts.rda"))
+counts450K <- as.data.frame(counts450K)
+counts450K$Tcell <- rowSums(counts450K[,1:3])
+counts450K <- counts450K[,c(7,4:6)]
+boxplot(counts450K)
+df.Houseman <- gather(cbind("samples" = rownames(counts450K), counts450K), celltype, est, -samples)
+
+dat$Lymph <- rowSums(dat[,1:4])
+M1.rmse = mean(sqrt(colMeans((trueProps[,5:7] - dat[,c(7,5,6)])^2)))
+M1.rmse
+
+
+# run compote::estimateCC method in dataBLSA.R and dataBLSA.sh scripts. 
+# est <- estimateCC(object = RGset, verbose = TRUE, epsilon = 0.01,  
+#                              maxIter = 50, initParamMethod = "random", 
+#                              includeSE = FALSE, B=10)
+# save(est, file = file.path(workingDir_jhuBloodwithProp, "jhu-blood-withProp-hicks-estimateCC.rda"))
+load(file.path(workingDir_jhuBloodwithProp, "jhu-blood-withProp-hicks-estimateCC.rda"))
+counts.450k.Hicks <- cellcounts(est)
+rownames(counts.450k.Hicks) <- colnames(RGset)
+boxplot(counts.450k.Hicks)
+df.Hicks <- gather(cbind("samples" = rownames(counts.450k.Hicks), counts.450k.Hicks), celltype, est, -samples)
+
+dfcombined <- full_join(df.Houseman, df.Hicks,  by = c("samples", "celltype"))
+dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Tcell", "Bcell", "Mono", "Gran"))
+
+gmat <- dfcombined %>% 
+  ggplot(aes(x=est.x, y = est.y)) + 
+    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+    facet_grid( ~celltype) + geom_point() +
+    xlab("Reference-based model (Houseman)") + ylab("Proposed model (Hicks)") + 
+    labs(title = "Model-based cell composition estimates from whole blood samples (n=800, BLSA data)")
+
+pdf(file.path(dataPath, "figs/array_HousemanHicks_scatterplot_BLSA_noTruth.pdf"), width = 12, height = 4)
+print(gmat)
+dev.off()
+
+
+
+
+
+M2.rmse = mean(sqrt(colMeans((trueProps[,5:7] - cbind("Lymph" = rowSums(cellcounts(est)[,1:2]), 
+                                                      cellcounts(est)[,3:4]))^2)))
+M2.rmse
+
+
+df.truth = gather(cbind("samples" = pData(RGset)$Sample.ID, trueProps[, 5:7]), 
+             celltype, est, -samples)
+
+df1 = gather(cbind("samples" = pData(RGset)$Sample.ID,
+                   cellcounts(est)[,3:4], 
+                   "Lymph" = rowSums(cellcounts(est)[,1:2])),
+             celltype, est, -samples)
+
+dfcombined <- full_join(df.truth, df1,  by = c("samples", "celltype"))
+
+df2 = gather(cbind("samples" = pData(RGset)$Sample.ID, dat[, c(7,5,6)]), 
+             celltype, est, -samples)
+
+dfcombined <- full_join(dfcombined, df2,  by = c("samples", "celltype"))
+colnames(dfcombined) <- c("samples", "celltype", "Truth", "Hicks", "Houseman")
+dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Lymph", "Mono", "Gran"))
+
+gmat <- dfcombined %>% 
+  ggplot(aes(x=Houseman, y = Hicks)) + 
+    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+    facet_grid( ~celltype) + geom_point() +
+    xlab("Reference-based model (Houseman)") + ylab("Proposed model (Hicks)") + 
+    labs(title = "Model-based cell composition estimates from whole blood samples (n=800, BLSA data)")
+
+pdf(file.path(dataPath, "figs/array_HousemanHicks_scatterplot_BLSA_noTruth.pdf"), width = 12, height = 4)
+print(gmat)
+dev.off()
+
+
+dfcombined <- gather(dfcombined, model, est, -c(samples, celltype, Truth))
+dfcombined$model <- factor(dfcombined$model, levels = c("Houseman", "Hicks"))
+
+gmat <- dfcombined %>% 
+  ggplot(aes(x=Truth, y = est)) + 
+    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+    facet_grid(model ~celltype) + geom_point() +
+    xlab("True Cell Composition (measured with flow cytometry)") + ylab("Model-based Cell Composition Estimates")
+
+pdf(file.path(dataPath, "figs/array_HousemanHicks_scatterplot.pdf"), width = 8, height = 5)
+print(gmat)
+dev.off()
+
+
+```
+

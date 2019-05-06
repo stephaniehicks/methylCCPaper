@@ -1,0 +1,78 @@
+---
+title: "runBayesCCE_dataFromAlex.Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load command line Matlab. 
+```{bash}
+gb
+module load math/matlab-R2015b
+matlab -nojvm -nosplash -nodesktop
+```
+
+Change directory to BayesCCE functions
+```{matlab}
+cd '/net/irizarryfs01/srv/export/irizarryfs01_backed_up/share_root/shicks/projects/compote/BayesCCE'
+```
+
+
+Load 450K data 
+```{matlab}
+filename_450k = '/net/irizarryfs01/srv/export/irizarryfs01_backed_up/share_root/shicks/projects/compote/dataFromAlex-RRBS-450k/dataforBayesCCE/450k.csv';
+M_450k = csvread(filename_450k, 1, 0);
+M_450k(1:5, :)
+```
+
+
+Run BayesCCE
+```{matlab}
+model_covars = [];
+refactor_covars= []; 
+k_refactor = 4; 
+d = 4;
+t = 500; 
+alpha = [0.69, 0.22, 0.055, 0.035];
+alpha = alpha';
+[R_est,M_est,beta_est,sites] = bayescce(M_450k, model_covars,refactor_covars, k_refactor, d, t, alpha);
+```
+
+Save cell composition estimates
+```{matlab}
+filename_450k_CellCompEst = '/net/irizarryfs01/srv/export/irizarryfs01_backed_up/share_root/shicks/projects/compote/dataFromAlex-RRBS-450k/cellCountsEsts/450k_BayesCCE.csv';
+csvwrite(filename_450k_CellCompEst,R_est)
+```
+
+
+
+*** CANNOT get RRBS data to run on bayescce *** 
+
+Now load RRBS data  
+```{matlab}
+filename_rrbs = '/net/irizarryfs01/srv/export/irizarryfs01_backed_up/share_root/shicks/projects/compote/dataFromAlex-RRBS-450k/dataforBayesCCE/rrbs_NAomit.csv';
+M_rrbs = csvread(filename_rrbs, 1, 0);
+M_rrbs(1:5, :)
+```
+
+
+Run BayesCCE
+```{matlab}
+model_covars = [];
+refactor_covars= []; 
+k_refactor = 4; 
+d = 10;
+t = 200; 
+alpha = [0.69, 0.22, 0.055, 0.035];
+alpha = alpha';
+[R_est,M_est,beta_est,sites] = bayescce(M_rrbs, model_covars,refactor_covars, k_refactor, d, t, alpha);
+```
+
+Save cell composition estimates
+```{matlab}
+filename_rrbs_CellCompEst = '/net/irizarryfs01/srv/export/irizarryfs01_backed_up/share_root/shicks/projects/compote/dataFromAlex-RRBS-450k/cellCountsEsts/rrbs_BayesCCE.csv';
+csvwrite(filename_450k_CellCompEst,R_est)
+```
+
