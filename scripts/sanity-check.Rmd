@@ -18,6 +18,7 @@ library(here)
 library(gplots)
 library(RColorBrewer)
 library(ggplot2)
+library(cowplot)
 
 # creates a own color palette from red to green
 my_palette <- colorRampPalette(c("red", "yellow", "green"))(n = 149)
@@ -31,156 +32,170 @@ dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
 # savePath <- "/users/shicks1/projects/methylCC/scripts/data"
 # figPath <- "/users/shicks1/projects/methylCC/figures/celltypespecificDMRegions"
 
+# # Create a MethylSet object ('Mset')
+# FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k) 
+# Mset_train450k <- preprocessIllumina(updateObject(FlowSorted.Blood.450k))
+# Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
+# save(Mset_train450k, file=file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
+load(file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
+
 # FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k)
 # Mset_train450k <- preprocessQuantile(FlowSorted.Blood.450k)
 # Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
 # save(Mset_train450k, file=file.path(workingDir_flowSort, "FlowSorted-Mset-Quantile.rda"))
-load(file.path(dataPath_flowSort, "FlowSorted-Mset-Quantile.rda"))
+# load(file.path(dataPath_flowSort, "FlowSorted-Mset-Quantile.rda"))
 
 Mset_train450k
-
-## see methylCC::findDMRs() to load function
-
-#verbose, gr_target=NULL, numRegions=50, 
-#                     includeCpGs = TRUE, includeDMRs = TRUE, 
-#                     numProbes=50, betaCutoff = 0.2, 
-#                     pairwiseComparison = FALSE
-
 ```
 
 
-## pairwiseComparison = TRUE
+## pairwiseComparison = FALSE
+
+### includeDMRs = TRUE, includeCpGs = FALSE
 
 ```{r}
-output <- findDMRs(Mset_train450k, verbose = TRUE, numRegions = 50, 
-                   includeCpGs = TRUE, includeDMRs = TRUE, 
-                   numProbes = 50, betaCutoff = 0.2,
-                   pairwiseComparison = FALSE)
+output <- findDMRs(Mset_train450k=Mset_train450k, 
+                    verbose = TRUE, gr_target=NULL, 
+                    numRegions = 50, numProbes=50,
+                    includeCpGs = FALSE, includeDMRs = TRUE, 
+                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
+                    dmr_up_cutoff = 0.5, # smaller is better
+                    dmr_down_cutoff = 0.4, # smaller is better
+                    dmr_pval_cutoff = 1e-11, # default of 1e-11
+                    cpg_pval_cutoff = 1e-08, # default of 1e-08
+                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
+                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
+                    pairwiseComparison = FALSE)
 table(duplicated(output$regions)) # 
+table(output$regions$cellType, output$regions$L)
 table(output$regions$cellType, output$regions$status)
-image(t(output$zmat))
-image(t(output$profiles))
+table(output$regions$cellType, output$regions$L, 
+      output$regions$dmr_status, output$regions$status)
+
+p1 <- as.data.frame(mcols(output$regions)) %>% 
+  ggplot(aes(x = dm, y = -log(p.value),
+             color = dmr_status)) +
+  geom_point() + 
+  geom_hline(yintercept=-log(1e-11)) + 
+  geom_hline(yintercept=-log(1e-08))
+
+
+p2 <- as.data.frame(mcols(output$regions)) %>% 
+  ggplot(aes(x = dm, y = -log(p.value),
+             color = cellType)) +
+  geom_point() + 
+  geom_hline(yintercept=-log(1e-11)) + 
+  geom_hline(yintercept=-log(1e-08))
+
+plot_grid(p1, p2)
+
+mypar()
+for(i in 51:60){
+  output$regions[i,]
+  plot(output$y[i,],col=rafalib::as.fumeric(as.character(output$cell)),main=i,ylim=c(0,1))
+  abline(h=0.5); 
+  legend("bottomright",output$cellLevels,col=1:6,pch=16)
+  Sys.sleep(1)
+}
+
+par(mfrow=c(1,3))
+image(t(output$housemanCpGs),  xaxt="n", main = "Houseman top 600 CpGs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
+image(t(output$profiles),  xaxt="n", main = "DMRs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
+image(t(output$zmat),  xaxt="n", main = "zmat")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
 
 p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
 target <- t(apply(as.data.frame(mcols(output$regions))[,1:2],1,function(ind){
     colMeans(p[(ind[1]):(ind[2]),,drop=FALSE]) }))
  
 ##quick and dirty regresion to cell counts:
-estimates <- solve(crossprod(output$profiles))%*%crossprod(output$profiles,target)
-t(estimates)
+estimates <- solve(crossprod(output$profiles)) %*% 
+                   crossprod(output$profiles,target)
+par(mfrow=c(1,1))
 image(estimates)
 
 heatmap.2(t(estimates),
-  # cellnote = estimates,  # same data set for cell labels
   main = "Cell Counts", # heat map title
   notecol="black",      # change font color of cell labels to black
   density.info="none",  # turns off density plot inside color legend
   trace="none",         # turns off trace lines inside the heat map
-  # margins =c(12,9),     # widens margins around plot
   col=my_palette,       # use on color palette defined earlier
   breaks=col_breaks,    # enable color transition at specified limits
   dendrogram="row",     # only draw a row dendrogram
   Colv="NA")            # turn off column clustering
 ```
-
-
-### includeDMRs = FALSE
-
-```{r}
-output_noDMRs <- findDMRs(Mset_train450k, verbose = TRUE, numRegions = 50, 
-                   includeCpGs = TRUE, includeDMRs = FALSE, 
-                   numProbes = 50, betaCutoff = 0.2,
-                   pairwiseComparison = FALSE)
-table(duplicated(output_noDMRs$regions)) # 
-table(output_noDMRs$regions$cellType, output_noDMRs$regions$status)
-image(t(output_noDMRs$zmat))
-image(t(output_noDMRs$profiles))
-
-p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
-target <- t(apply(as.data.frame(mcols(output_noDMRs$regions))[,1:2],1,function(ind){
-    colMeans(p[(ind[1]):(ind[2]),,drop=FALSE]) }))
- 
-##quick and dirty regresion to cell counts:
-estimates_noDMRs <- solve(crossprod(output_noDMRs$profiles)) %*% 
-                   crossprod(output_noDMRs$profiles,target)
-t(estimates_noDMRs)
-image(estimates_noDMRs)
-
-heatmap.2(t(estimates_noDMRs),
-  # cellnote = estimates_noDMRs,  # same data set for cell labels
-  main = "Cell Counts", # heat map title
-  notecol="black",      # change font color of cell labels to black
-  density.info="none",  # turns off density plot inside color legend
-  trace="none",         # turns off trace lines inside the heat map
-  # margins =c(12,9),     # widens margins around plot
-  col=my_palette,       # use on color palette defined earlier
-  breaks=col_breaks,    # enable color transition at specified limits
-  dendrogram="row",     # only draw a row dendrogram
-  Colv="NA")            # turn off column clustering
-```
-
-
-### includeCpGs = FALSE
-
-```{r}
-output_noCpGs <- findDMRs(Mset_train450k, verbose = TRUE, numRegions = 50, 
-                   includeCpGs = FALSE, includeDMRs = TRUE, 
-                   numProbes = 50, betaCutoff = 0.2,
-                   pairwiseComparison = FALSE)
-table(duplicated(output_noCpGs$regions)) # 
-table(output_noCpGs$regions$cellType, output_noCpGs$regions$status)
-image(t(output_noCpGs$zmat))
-image(t(output_noCpGs$profiles))
-
-p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
-target <- t(apply(as.data.frame(mcols(output_noCpGs$regions))[,1:2],1,function(ind){
-    colMeans(p[(ind[1]):(ind[2]),,drop=FALSE]) }))
- 
-##quick and dirty regresion to cell counts:
-estimates_noCpGs <- solve(crossprod(output_noCpGs$profiles)) %*% 
-                   crossprod(output_noCpGs$profiles,target)
-t(estimates_noCpGs)
-image(estimates_noCpGs)
-
-heatmap.2(t(estimates_noCpGs),
-  # cellnote = estimates_noCpGs,  # same data set for cell labels
-  main = "Cell Counts", # heat map title
-  notecol="black",      # change font color of cell labels to black
-  density.info="none",  # turns off density plot inside color legend
-  trace="none",         # turns off trace lines inside the heat map
-  # margins =c(12,9),     # widens margins around plot
-  col=my_palette,       # use on color palette defined earlier
-  breaks=col_breaks,    # enable color transition at specified limits
-  dendrogram="row",     # only draw a row dendrogram
-  Colv="NA")            # turn off column clustering
-```
-
 
 
 ## pairwiseComparison = TRUE
 
-```{r}
-outputPair <- findDMRs(Mset_train450k, verbose = TRUE, numRegions = 50, 
-                   includeCpGs = TRUE, includeDMRs = TRUE, 
-                   numProbes = 50, betaCutoff = 0.2, 
-                   pairwiseComparison = TRUE)
-table(duplicated(outputPair$regions))
-table(outputPair$regions$cellType, outputPair$regions$status)
-image(t(outputPair$zmat))
-image(t(outputPair$profiles))
 
-p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
-target <- t(apply(as.data.frame(mcols(outputPair$regions))[,1:2],1,function(ind){
+```{r}
+outputPairs <- findDMRs(Mset_train450k=Mset_train450k, 
+                    verbose = TRUE, gr_target=NULL, 
+                    numRegions = 50, numProbes=50,
+                    includeCpGs = FALSE, includeDMRs = TRUE, 
+                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
+                    dmr_up_cutoff = 0.5, # smaller is better
+                    dmr_down_cutoff = 0.4, # smaller is better
+                    dmr_pval_cutoff = 1e-11, # default of 1e-11
+                    cpg_pval_cutoff = 1e-08, # default of 1e-08
+                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
+                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
+                    pairwiseComparison = TRUE)
+table(duplicated(outputPairs$regions)) # 
+table(outputPairs$regions$cellType, outputPairs$regions$L)
+table(outputPairs$regions$cellType, outputPairs$regions$status)
+table(outputPairs$regions$cellType, outputPairs$regions$L, 
+      outputPairs$regions$dmr_status, outputPairs$regions$status)
+
+p1 <- as.data.frame(mcols(outputPairs$regions)) %>% 
+  ggplot(aes(x = dm, y = -log(p.value),
+             color = dmr_status)) +
+  geom_point() + 
+  geom_hline(yintercept=-log(1e-11)) + 
+  geom_hline(yintercept=-log(1e-08))
+
+
+p2 <- as.data.frame(mcols(outputPairs$regions)) %>% 
+  ggplot(aes(x = dm, y = -log(p.value),
+             color = cellType)) +
+  geom_point() + 
+  geom_hline(yintercept=-log(1e-11)) + 
+  geom_hline(yintercept=-log(1e-08))
+
+plot_grid(p1, p2)
+
+mypar()
+for(i in 101:105){
+  outputPairs$regions[i,]
+  plot(outputPairs$y[i,],col=rafalib::as.fumeric(as.character(outputPairs$cell)),main=i,ylim=c(0,1))
+  abline(h=0.5); 
+  legend("bottomright",outputPairs$cellLevels,col=1:6,pch=16)
+  Sys.sleep(1)
+}
+
+par(mfrow=c(1,3))
+image(t(outputPairs$housemanCpGs),  xaxt="n", main = "Houseman top 600 CpGs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(outputPairs$zmat))
+image(t(outputPairs$profiles),  xaxt="n", main = "DMRs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(outputPairs$zmat))
+image(t(outputPairs$zmat),  xaxt="n", main = "zmat")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(outputPairs$zmat))
+
+p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"], 
+             type = "Illumina") # beta values
+target <- t(apply(as.data.frame(mcols(outputPairs$regions))[,1:2],1,function(ind){
     colMeans(p[(ind[1]):(ind[2]),,drop=FALSE]) }))
  
- 
 ##quick and dirty regresion to cell counts:
-estimatesPairs <- solve(crossprod(outputPair$profiles))%*%crossprod(outputPair$profiles,target)
-t(estimatesPairs)
+estimatesPairs <- solve(crossprod(outputPairs$profiles)) %*% 
+                   crossprod(outputPairs$profiles,target)
+par(mfrow=c(1,1))
 image(estimatesPairs)
 
 heatmap.2(t(estimatesPairs),
-
   main = "Cell Counts", # heat map title
   notecol="black",      # change font color of cell labels to black
   density.info="none",  # turns off density plot inside color legend
@@ -189,14 +204,14 @@ heatmap.2(t(estimatesPairs),
   breaks=col_breaks,    # enable color transition at specified limits
   dendrogram="row",     # only draw a row dendrogram
   Colv="NA")            # turn off column clustering
-
-
 ```
 
 
+## comparison 
+
 ```{r}
 dat <- dplyr::full_join(
-  cbind(tidyr::gather(as.data.frame(estimates_noDMRs)), 
+  cbind(tidyr::gather(as.data.frame(estimates)), 
         celltype = rep(rownames(estimates), ncol(estimates))), 
   cbind(tidyr::gather(as.data.frame(estimatesPairs)), 
          celltype = rep(rownames(estimates), ncol(estimates))), 
@@ -206,9 +221,6 @@ dat <- dplyr::full_join(
 dat %>% # filter(celltype %in% c( "CD8T")) %>% 
   ggplot(aes(value.x, value.y, color = type)) + 
   geom_point()
-
-
-
 
 ```
 

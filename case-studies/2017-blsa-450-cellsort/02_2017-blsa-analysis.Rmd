@@ -6,33 +6,26 @@ output: html_document
 ```{r}
 library(ggplot2)
 library(cowplot)
-library(tidyr)
-library(dplyr)
 library(minfi)
 library(quadprog)
-library(here)
 # library(methylCC) # on Github
-
-
-# dataPathCellTypeSpecificDMRs <- "/users/shicks1/projects/methylCC/scripts/data"
-# celltypeSpecificDMRegions <- readRDS(file = file.path(dataPathCellTypeSpecificDMRs, "celltypeSpecificDMRegions.RDS"))
-# celltypeSpecificDMRegionsSub <- readRDS(file = file.path(dataPathCellTypeSpecificDMRs, "celltypeSpecificDMRegionsSub.RDS"))
 
 dataPath_blsa <- "/users/shicks1/data/DNAm/2017-blsa-450-cellsort"
 dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
+workingDir_blsa <- "/users/shicks1/projects/methylCCPaper/case-studies/2017-blsa-450-cellsort"
 
 # # Create a MethylSet object ('Mset')
 # FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k) 
 # Mset_train450k <- preprocessIllumina(updateObject(FlowSorted.Blood.450k))
 # Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
 # save(Mset_train450k, file=file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
-# load(file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
+load(file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
 
 # FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k)
 # Mset_train450k <- preprocessQuantile(FlowSorted.Blood.450k)
 # Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
 # save(Mset_train450k, file=file.path(dataPath_flowSort, "FlowSorted-Mset-Quantile.rda"))
-load(file.path(dataPath_flowSort, "FlowSorted-Mset-Quantile.rda"))
+# load(file.path(dataPath_flowSort, "FlowSorted-Mset-Quantile.rda"))
 
 
 ################################################
@@ -64,35 +57,62 @@ colnames(trueProps) <- c("samples", "Baso", "Eos", "Neu", "Lymph", "Mono", "Gran
 
 # run minfi::estimateCellCounts() in dataBLSA.R and dataBLSA.sh scripts. 
 # counts450K <- estimateCellCounts(RGset)
-# save(counts450K, file = file.path(dataPath_blsa, "cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
-load(file.path(dataPath_blsa, "ests/cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
+# save(counts450K, file = file.path(workingDir_blsa, "cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
+load(file.path(workingDir_blsa, "ests/cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
 counts450K <- as.data.frame(counts450K)
 counts450K <- counts450K / rowSums(counts450K)
-# boxplot(counts450K, y = c(0,1))
+
 counts450K$Lymph <- 
   rowSums(counts450K[, colnames(counts450K) %in% c("CD4T", "CD8T", "NK", "Bcell")])
 counts450K <- counts450K[, colnames(counts450K) %in% c("Gran", "Mono", "Lymph")]
 
 ##### 
-keepSamples <- 1:50 # seq_len(nrow(counts450K)) # 1:50
+keepSamples <- 1:100 # seq_len(nrow(counts450K)) # 1:50
 counts450K <- counts450K[keepSamples,]
 boxplot(counts450K, ylim = c(0,1))
-df.Houseman <- gather(cbind("samples" = rownames(counts450K), counts450K), celltype, est, -samples)
+df.Houseman <- tidyr::gather(cbind("samples" = rownames(counts450K), counts450K), celltype, est, -samples)
 
 M1.rmse = mean(sqrt(colMeans((trueProps[keepSamples,5:7] - counts450K[,c(3,1,2)])^2)))
 M1.rmse
 
 
 ##### 
-regions <- findDMRs(Mset_train450k=Mset_train450k,
-                    verbose=TRUE, gr_target=NULL, numRegions=50, numProbes=50,
-                    includeCpGs = FALSE, betaCutoff = 0.2, pairwiseComparison=FALSE)
-table(mcols(regions$regions)$cellType, mcols(regions$regions)$status)
-table(mcols(regions$regions)$cellType,mcols(regions$regions)$L)
-plot(regions$regions$dm, -log(regions$regions$p.value))
+regions <- findDMRs(Mset_train450k=Mset_train450k, 
+                    verbose = TRUE, gr_target=NULL, 
+                    numRegions = 50, numProbes=50,
+                    includeCpGs = FALSE, includeDMRs = TRUE, 
+                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
+                    dmr_up_cutoff = 0.50, # smaller is better
+                    dmr_down_cutoff = 0.40, # smaller is better
+                    dmr_pval_cutoff = 1e-11, # default of 1e-11
+                    cpg_pval_cutoff = 1e-08, # default of 1e-08
+                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
+                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
+                    pairwiseComparison = FALSE)
+table(regions$regions$cellType,regions$regions$L)
+table(regions$regions$cellType, regions$regions$status)
+table(regions$regions$cellType, regions$regions$L, 
+      regions$regions$dmr_status, regions$regions$status)
+
+p1 <- as.data.frame(mcols(regions$regions)) %>% 
+  ggplot(aes(x = dm, y = -log(p.value),
+             color = dmr_status)) +
+  geom_point() + 
+  geom_hline(yintercept=-log(1e-11)) + 
+  geom_hline(yintercept=-log(1e-08))
+
+
+p2 <- as.data.frame(mcols(regions$regions)) %>% 
+  ggplot(aes(x = dm, y = -log(p.value),
+             color = cellType)) +
+  geom_point() + 
+  geom_hline(yintercept=-log(1e-11)) + 
+  geom_hline(yintercept=-log(1e-08))
+
+plot_grid(p1, p2)
 
 mypar()
-for(i in 500:515){
+for(i in 101:105){
   regions$regions[i,]
   plot(regions$y[i,],col=rafalib::as.fumeric(as.character(regions$cell)),main=i,ylim=c(0,1))
   abline(h=0.5); 
@@ -108,46 +128,36 @@ image(t(regions$profiles),  xaxt="n", main = "DMRs")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(regions$zmat))
 
 # run compote::estimateCC method in dataBLSA.R and dataBLSA.sh scripts. 
+set.seed(12345)
 est <- estimateCC(object = RGset[,keepSamples], findRegions = FALSE, 
                   verbose = TRUE, epsilon = 0.01, 
                   maxIter = 100, initParamMethod = "random")
+
 # save(est, file = file.path(dataPath_blsa, "cellcounts/dataBLSA-hicks-estimateCC.RData"))
 # load(file.path(dataPath_blsa, "cellcounts/dataBLSA-hicks-estimateCC-208regions.RData"))
 counts.450k.Hicks <- cellcounts(est)
 rownames(counts.450k.Hicks) <- colnames(RGset[,keepSamples])
-# boxplot(counts.450k.Hicks, ylim = c(0,1))
+
 counts.450k.Hicks$Lymph <- 
 rowSums(counts.450k.Hicks[, colnames(counts.450k.Hicks) %in% c("CD4T", "CD8T", "NK", "Bcell")])
 counts.450k.Hicks <- counts.450k.Hicks[, which(colnames(counts.450k.Hicks) %in% c("Gran", "Mono", "Lymph"))]
 par(mfrow=c(1,1)); boxplot(counts.450k.Hicks, ylim = c(0,1))
 
-df.Hicks <- gather(cbind("samples" = rownames(counts.450k.Hicks), counts.450k.Hicks), celltype, est, -samples)
+df.Hicks <- tidyr::gather(cbind("samples" = rownames(counts.450k.Hicks), counts.450k.Hicks), celltype, est, -samples)
 
 M2.rmse = mean(sqrt(colMeans((trueProps[keepSamples,c("Mono", "Gran", "Lymph")] - 
                                 counts.450k.Hicks[,c("Mono", "Gran", "Lymph")])^2)))
 M2.rmse
 
 
-df.trueProps <- gather(cbind("samples" = rownames(counts.450k.Hicks), 
+df.trueProps <- tidyr::gather(cbind("samples" = rownames(counts.450k.Hicks), 
                              trueProps[keepSamples,c(5:7)]), celltype, est, -samples)
-dfcombined <- full_join(df.trueProps, df.Houseman,  by = c("samples", "celltype"))
-dfcombined <- full_join(dfcombined, df.Hicks,  by = c("samples", "celltype"))
+dfcombined <- dplyr::full_join(df.trueProps, df.Houseman,  by = c("samples", "celltype"))
+dfcombined <- dplyr::full_join(dfcombined, df.Hicks,  by = c("samples", "celltype"))
 colnames(dfcombined) <- c("samples", "celltype", "Truth", "Houseman", "Hicks")
 dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Lymph", "Mono", "Gran"))
-dfcombined <- gather(dfcombined, model, est, -c(samples, celltype, Truth))
+dfcombined <- tidyr::gather(dfcombined, model, est, -c(samples, celltype, Truth))
 dfcombined$model <- factor(dfcombined$model, levels = c("Houseman", "Hicks"))
-
-# gmat <- 
-dfcombined %>% 
-  ggplot(aes(x=Truth, y = est)) + 
-    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-    facet_grid(model ~celltype) + geom_point() +
-    xlab("True Cell Composition (measured with flow cytometry)") + ylab("Model-based Cell Composition Estimates")
-
-pdf(file.path(dataPath_blsa, "figs/array_HousemanHicks_scatterplot-403Regions.pdf"), width = 8, height = 5)
-print(gmat)
-dev.off()
-
 
 dfcombined %>% 
   ggplot(aes(x=Truth, y = est, colour=celltype)) + 
@@ -156,75 +166,4 @@ dfcombined %>%
     xlab("True Cell Composition (measured with flow cytometry)") + ylab("Model-based Cell Composition Estimates")
 
 ```
-
-
-Delete after this point
-
-```{r}
-dfcombined <- full_join(df.Houseman, df.Hicks,  by = c("samples", "celltype"))
-dfcombined$celltype <- factor(dfcombined$celltype, levels = c("CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran"))
-
-gmat <- dfcombined %>% 
-  ggplot(aes(x=est.x, y = est.y)) + 
-    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-    facet_grid( ~celltype) + geom_point() +
-    xlab("Reference-based model (Houseman)") + ylab("Proposed model (Hicks)") + 
-    labs(title = "Model-based cell composition estimates from whole blood samples (n=800, BLSA data)")
-
-pdf(file.path(dataPath_blsa, "figs/array_HousemanHicks_scatterplot_BLSA_noTruth.pdf"), width = 12, height = 4)
-print(gmat)
-dev.off()
-
-
-
-M2.rmse = mean(sqrt(colMeans((trueProps[,5:7] - cbind("Lymph" = rowSums(cellcounts(est)[,1:2]), 
-                                                      cellcounts(est)[,3:4]))^2)))
-M2.rmse
-
-
-df.truth = gather(cbind("samples" = pData(RGset)$Sample.ID, trueProps[, 5:7]), 
-             celltype, est, -samples)
-
-df1 = gather(cbind("samples" = pData(RGset)$Sample.ID,
-                   cellcounts(est)[,3:4], 
-                   "Lymph" = rowSums(cellcounts(est)[,1:2])),
-             celltype, est, -samples)
-
-dfcombined <- full_join(df.truth, df1,  by = c("samples", "celltype"))
-
-df2 = gather(cbind("samples" = pData(RGset)$Sample.ID, dat[, c(7,5,6)]), 
-             celltype, est, -samples)
-
-dfcombined <- full_join(dfcombined, df2,  by = c("samples", "celltype"))
-colnames(dfcombined) <- c("samples", "celltype", "Truth", "Hicks", "Houseman")
-dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Lymph", "Mono", "Gran"))
-
-gmat <- dfcombined %>% 
-  ggplot(aes(x=Houseman, y = Hicks)) + 
-    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-    facet_grid( ~celltype) + geom_point() +
-    xlab("Reference-based model (Houseman)") + ylab("Proposed model (Hicks)") + 
-    labs(title = "Model-based cell composition estimates from whole blood samples (n=800, BLSA data)")
-
-pdf(file.path(dataPath_blsa, "figs/array_HousemanHicks_scatterplot_BLSA_noTruth.pdf"), width = 12, height = 4)
-print(gmat)
-dev.off()
-
-
-dfcombined <- gather(dfcombined, model, est, -c(samples, celltype, Truth))
-dfcombined$model <- factor(dfcombined$model, levels = c("Houseman", "Hicks"))
-
-gmat <- dfcombined %>% 
-  ggplot(aes(x=Truth, y = est)) + 
-    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-    facet_grid(model ~celltype) + geom_point() +
-    xlab("True Cell Composition (measured with flow cytometry)") + ylab("Model-based Cell Composition Estimates")
-
-pdf(file.path(dataPath_blsa, "figs/array_HousemanHicks_scatterplot.pdf"), width = 8, height = 5)
-print(gmat)
-dev.off()
-
-
-```
-
 

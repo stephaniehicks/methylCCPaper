@@ -17,9 +17,9 @@ setwd(dataPath)
 # gse <- getGEO("GSE77716",GSEMatrix=TRUE, destdir = dataPath)
 # pd <- pData(gse[[1]])
 # rownames(pd) <- pd$title
-# saveRDS(pd, file = file.path(dataPath, "pd_PinoYanes2015.rds"))
+# saveRDS(pd, file = file.path(dataPath, "pd_rahmani2016.rds"))
 # rm(gse)
-pd <- readRDS(file.path(dataPath, "pd_PinoYanes2015.rds"))
+pd <- readRDS(file.path(dataPath, "pd_rahmani2016.rds"))
 pd$cc_baso <- as.numeric(dplyr::na_if(pd$`gran_basophils:ch1`, "null"))
 pd$cc_eso <- as.numeric(dplyr::na_if(pd$`gran_eosinophils:ch1`, "null"))
 pd$cc_neu <- as.numeric(dplyr::na_if(pd$`gran_neutrophils:ch1`, "null"))
@@ -30,7 +30,7 @@ pd$cc_mono <- as.numeric(dplyr::na_if(pd$`monocytes:ch1`, "null"))
 pd$cc_available <- !is.na(pd$cc_baso) & !is.na(pd$cc_eso) & !is.na(pd$cc_neu) & 
   !is.na(pd$cc_lymph) & !is.na(pd$cc_mono)
 
-message("[dataFromPinoYanes2015-450k] Downloading 450k data.")
+message("[2016-rahmani-wholeblood-450-cellsort] Downloading 450k data.")
 # # download all supplemental files (including CEL files)
 # dataPath <- "/users/shicks1/data/GEO"
 # setwd(dataPath)
@@ -60,5 +60,5 @@ galaMset <- mapToGenome(galaMset, mergeManifest = TRUE)
 
 message("Saving Mset")
 # save Mset object
-saveRDS(galaMset, file=file.path(dataPath, "Mset_PinoYanes2015.rds"))
+saveRDS(galaMset, file=file.path(dataPath, "Mset_rahmani2016.rds"))
 

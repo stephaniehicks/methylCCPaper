@@ -5,14 +5,15 @@ library(dplyr)
 library(minfi)
 library(quadprog)
 library(methylCC)
-library(here)
 
 ################################################
 ### Target Data: 806 450K DNA methylation samples with known cell type proportions
 ################################################
 
-workingDir_blsa2017 <- here("case-studies", "2017-blsa-450-cellsort")
 dataPath_blsa <- "/users/shicks1/data/DNAm/2017-blsa-450-cellsort"
+dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
+workingDir_blsa <- "/users/shicks1/projects/methylCCPaper/case-studies/2017-blsa-450-cellsort"
+
 
 # Flow Sorted measured cell type proportions (806 samples)
 trueProps <- read.csv(file.path(dataPath_blsa, 
@@ -39,12 +40,12 @@ colnames(trueProps) <- c("samples", "Baso", "Eos", "Neu", "Lymph", "Mono", "Gran
 
 # run minfi::estimateCellCounts()
 counts450K <- estimateCellCounts(RGset)
-save(counts450K, file = file.path(dataPath_blsa, "ests/cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
+save(counts450K, file = file.path(workingDir_blsa, "ests/cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
 
 # compare to compote::estimateCC method
 est <- estimateCC(object = RGset, verbose = TRUE, epsilon = 0.01,
                   maxIter = 100, initParamMethod = "random")
-save(est, file = file.path(dataPath_blsa, "ests/cellcounts/dataBLSA-hicks-estimateCC-410regions.RData"))
+save(est, file = file.path(workingDir_blsa, "ests/cellcounts/dataBLSA-hicks-estimateCC-410regions.RData"))
 rm(est) 
 
 
