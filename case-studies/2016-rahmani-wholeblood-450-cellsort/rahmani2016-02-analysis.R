@@ -1,26 +1,10 @@
+library(tidyr)
+library(dplyr)
 library(ggplot2)
 library(cowplot)
 library(minfi)
 library(quadprog)
-
-
-################################################
-### Train Data: 
-###       * load 35 450K DNA methylation samples with known cell type proportions
-###       * identify top differentially methylated 600 CpGs using `estimateCellCounts.modified()` on `RGset_target450k` 
-#   - Returns 600 Houseman CpGs. 
-
-################################################
-dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
-
-# library(FlowSorted.Blood.450k)
-# FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k) 
-# Mset_train450k <- preprocessIllumina(updateObject(FlowSorted.Blood.450k))
-# Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
-# save(Mset_train450k, file=file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
-load(file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
-
-Mset_train450k
+library(methylCC)
 
 
 ################################################
@@ -28,14 +12,12 @@ Mset_train450k
 ###       * 95 450K DNA methylation samples with known cell type proportions
 ################################################
 workingDir_rahmani2016 <- 
-  "/users/shicks1/projects/methylCCPaper/case-studies/2017-pinoyanes-wholeblood-450-cellsort"
+  "/users/shicks1/projects/methylCCPaper/case-studies/2016-rahmani-wholeblood-450-cellsort"
 dataPath <- "/users/shicks1/data/GEO/GSE77716"
 
 # Load 95 samples run on 450K DNA methylation array
 #   - see 01_2016-rahmani-create-data-object.R for how Mset_rahmani2016.rds was created
 galaMset <- readRDS(file.path(dataPath, "Mset_rahmani2016.rds"))
-
-
 
 
 # Select only the 78 files used in Rahamani et al. 2016
@@ -62,14 +44,11 @@ trueProps$cc_gran <- rowSums(as.matrix(pd[, names(pd) %in%
 trueProps <- trueProps*.01
 colnames(trueProps) <- c("Baso", "Eos", "Neu", "Lymph", "Mono", "Gran")
 
-##### run Houseman method 
-devtools::load_all()
 
 ##### find regions
-regions <- findDMRs(Mset_train450k=Mset_train450k, 
-                    verbose = TRUE, gr_target=NULL, 
-                    numRegions = 50, numProbes=50,
-                    includeCpGs = FALSE, includeDMRs = TRUE, 
+output <- find_dmrs(verbose = TRUE, gr_target = NULL, 
+                    num_regions = 50, num_cpgs = 50,
+                    include_cpgs = FALSE, include_dmrs = TRUE, 
                     bumphunter_beta_cutoff = 0.2, # defined by bumphunter
                     dmr_up_cutoff = 0.50, # smaller is better
                     dmr_down_cutoff = 0.40, # smaller is better
@@ -77,15 +56,15 @@ regions <- findDMRs(Mset_train450k=Mset_train450k,
                     cpg_pval_cutoff = 1e-08, # default of 1e-08
                     cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
                     cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwiseComparison = FALSE)
+                    pairwise_comparison = FALSE)
 
-table(regions$regions$cellType, regions$regions$L, 
-      regions$regions$dmr_status, regions$regions$status)
+table(output$regions_all$cellType, output$regions_all$L, 
+      output$regions_all$dmr_status, output$regions_all$status)
 
 ##### compare to houseman approach using 600 Houseman CpGs 
 counts450KHouseman <- 
   minfi:::projectCellType(
-          betaValues[rownames(regions$housemanCpGs),], regions$housemanCpGs)
+          betaValues[rownames(output$cpgs_houseman),], output$cpgs_houseman)
 
 counts450KHouseman <- as.data.frame(counts450KHouseman)
 
@@ -103,10 +82,11 @@ M1.rmse
 
 ##### run methylCC
 set.seed(12345)
-est <- estimateCC(object = galaMset, findRegions = FALSE, 
+est <- estimatecc(object = galaMset, 
+                  find_dmrs_object = output, 
                   verbose = TRUE, epsilon = 0.01, 
-                  maxIter = 100, initParamMethod = "random")
-counts450KHicks <- cellcounts(est)
+                  max_iter = 100, init_param_method = "random")
+counts450KHicks <- cell_counts(est)
 
 counts450KHicks$Lymph <- 
   rowSums(counts450KHicks[, colnames(counts450KHicks) %in% c("CD4T", "CD8T", "NK", "Bcell")])

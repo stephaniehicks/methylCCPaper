@@ -57,8 +57,8 @@ colnames(trueProps) <- c("samples", "Baso", "Eos", "Neu", "Lymph", "Mono", "Gran
 
 # run minfi::estimateCellCounts() in dataBLSA.R and dataBLSA.sh scripts. 
 # counts450K <- estimateCellCounts(RGset)
-# save(counts450K, file = file.path(workingDir_blsa, "cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
-load(file.path(workingDir_blsa, "ests/cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
+# save(counts450K, file = file.path(workingDir_blsa, "dataBLSA-minfi-estimateCellCounts.RData"))
+load(file.path(workingDir_blsa, "ests/dataBLSA-minfi-estimateCellCounts.RData"))
 counts450K <- as.data.frame(counts450K)
 counts450K <- counts450K / rowSums(counts450K)
 
@@ -77,10 +77,9 @@ M1.rmse
 
 
 ##### 
-regions <- findDMRs(Mset_train450k=Mset_train450k, 
-                    verbose = TRUE, gr_target=NULL, 
-                    numRegions = 50, numProbes=50,
-                    includeCpGs = FALSE, includeDMRs = TRUE, 
+output <- find_dmrs(verbose = TRUE, gr_target = NULL, 
+                    num_regions = 50, num_cpgs = 50,
+                    include_cpgs = FALSE, include_dmrs = TRUE, 
                     bumphunter_beta_cutoff = 0.2, # defined by bumphunter
                     dmr_up_cutoff = 0.50, # smaller is better
                     dmr_down_cutoff = 0.40, # smaller is better
@@ -88,13 +87,13 @@ regions <- findDMRs(Mset_train450k=Mset_train450k,
                     cpg_pval_cutoff = 1e-08, # default of 1e-08
                     cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
                     cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwiseComparison = FALSE)
-table(regions$regions$cellType,regions$regions$L)
-table(regions$regions$cellType, regions$regions$status)
-table(regions$regions$cellType, regions$regions$L, 
-      regions$regions$dmr_status, regions$regions$status)
+                    pairwise_comparison = FALSE)
+table(output$regions_all$cellType,output$regions_all$L)
+table(output$regions_all$cellType, output$regions_all$status)
+table(output$regions_all$cellType, output$regions_all$L, 
+      output$regions_all$dmr_status, output$regions_all$status)
 
-p1 <- as.data.frame(mcols(regions$regions)) %>% 
+p1 <- as.data.frame(mcols(output$regions_all)) %>% 
   ggplot(aes(x = dm, y = -log(p.value),
              color = dmr_status)) +
   geom_point() + 
@@ -102,7 +101,7 @@ p1 <- as.data.frame(mcols(regions$regions)) %>%
   geom_hline(yintercept=-log(1e-08))
 
 
-p2 <- as.data.frame(mcols(regions$regions)) %>% 
+p2 <- as.data.frame(mcols(output$regions_all)) %>% 
   ggplot(aes(x = dm, y = -log(p.value),
              color = cellType)) +
   geom_point() + 
@@ -113,41 +112,49 @@ plot_grid(p1, p2)
 
 mypar()
 for(i in 101:105){
-  regions$regions[i,]
-  plot(regions$y[i,],col=rafalib::as.fumeric(as.character(regions$cell)),main=i,ylim=c(0,1))
+  output$regions_all[i,]
+  plot(output$y_regions[i,],
+       col = rafalib::as.fumeric(as.character(output$cell)), 
+       main=i,ylim=c(0,1))
   abline(h=0.5); 
-  legend("bottomright",regions$cellLevels,col=1:6,pch=16)
+  legend("bottomright",output$cell_levels,col=1:6,pch=16)
   Sys.sleep(1)
 }
 
-
 par(mfrow=c(1,2))
-image(t(regions$housemanCpGs),  xaxt="n", main = "Houseman top 600 CpGs")
-axis(side=1, at=seq(0, 1, by =.2), labels=colnames(regions$zmat))
-image(t(regions$profiles),  xaxt="n", main = "DMRs")
-axis(side=1, at=seq(0, 1, by =.2), labels=colnames(regions$zmat))
+image(t(output$cpgs_houseman),  xaxt="n", main = "Houseman top 600 CpGs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
+image(t(output$profiles),  xaxt="n", main = "DMRs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
 
-# run compote::estimateCC method in dataBLSA.R and dataBLSA.sh scripts. 
+# run methylCC::estimatecc
 set.seed(12345)
-est <- estimateCC(object = RGset[,keepSamples], findRegions = FALSE, 
+est <- estimatecc(object = RGset[,keepSamples], 
+                  find_dmrs_object = output, 
                   verbose = TRUE, epsilon = 0.01, 
-                  maxIter = 100, initParamMethod = "random")
+                  max_iter = 100, init_param_method = "random")
+# save(est, file = file.path(dataPath_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
 
-# save(est, file = file.path(dataPath_blsa, "cellcounts/dataBLSA-hicks-estimateCC.RData"))
-# load(file.path(dataPath_blsa, "cellcounts/dataBLSA-hicks-estimateCC-208regions.RData"))
-counts.450k.Hicks <- cellcounts(est)
+# load(file.path(dataPath_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
+counts.450k.Hicks <- cell_counts(est)
 rownames(counts.450k.Hicks) <- colnames(RGset[,keepSamples])
 
 counts.450k.Hicks$Lymph <- 
-rowSums(counts.450k.Hicks[, colnames(counts.450k.Hicks) %in% c("CD4T", "CD8T", "NK", "Bcell")])
-counts.450k.Hicks <- counts.450k.Hicks[, which(colnames(counts.450k.Hicks) %in% c("Gran", "Mono", "Lymph"))]
+rowSums(counts.450k.Hicks[, colnames(counts.450k.Hicks)
+                          %in% c("CD4T", "CD8T", "NK", "Bcell")])
+counts.450k.Hicks <- counts.450k.Hicks[, 
+                        which(colnames(counts.450k.Hicks) %in% 
+                                c("Gran", "Mono", "Lymph"))]
 par(mfrow=c(1,1)); boxplot(counts.450k.Hicks, ylim = c(0,1))
 
-df.Hicks <- tidyr::gather(cbind("samples" = rownames(counts.450k.Hicks), counts.450k.Hicks), celltype, est, -samples)
+df.Hicks <- tidyr::gather(cbind("samples" = rownames(counts.450k.Hicks), 
+                                counts.450k.Hicks), 
+                          celltype, est, -samples)
 
 M2.rmse = mean(sqrt(colMeans((trueProps[keepSamples,c("Mono", "Gran", "Lymph")] - 
                                 counts.450k.Hicks[,c("Mono", "Gran", "Lymph")])^2)))
 M2.rmse
+
 
 
 df.trueProps <- tidyr::gather(cbind("samples" = rownames(counts.450k.Hicks), 

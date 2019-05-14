@@ -1,7 +1,3 @@
-library(ggplot2)
-library(cowplot)
-library(tidyr)
-library(dplyr)
 library(minfi)
 library(quadprog)
 library(methylCC)
@@ -39,13 +35,15 @@ trueProps <- trueProps[match(pData(RGset)$Sample.ID, trueProps$sampleID), ]
 colnames(trueProps) <- c("samples", "Baso", "Eos", "Neu", "Lymph", "Mono", "Gran")
 
 # run minfi::estimateCellCounts()
-counts450K <- estimateCellCounts(RGset)
-save(counts450K, file = file.path(workingDir_blsa, "ests/cellcounts/dataBLSA-minfi-estimateCellCounts.RData"))
+# counts450K <- estimateCellCounts(RGset)
+# save(counts450K, file = file.path(workingDir_blsa, "ests/dataBLSA-minfi-estimateCellCounts.RData"))
 
 # compare to compote::estimateCC method
-est <- estimateCC(object = RGset, verbose = TRUE, epsilon = 0.01,
-                  maxIter = 100, initParamMethod = "random")
-save(est, file = file.path(workingDir_blsa, "ests/cellcounts/dataBLSA-hicks-estimateCC-410regions.RData"))
+set.seed(12345)
+est <- estimatecc(object = RGset,
+                  verbose = TRUE, epsilon = 0.01, 
+                  max_iter = 100, init_param_method = "random")
+save(est, file = file.path(workingDir_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
 rm(est) 
 
 

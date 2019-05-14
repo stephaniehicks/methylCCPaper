@@ -13,7 +13,6 @@ library(FlowSorted.Blood.450k)
 library(rafalib)
 library(limma)
 library(bumphunter)
-library(here)
 
 library(gplots)
 library(RColorBrewer)
@@ -54,10 +53,10 @@ Mset_train450k
 ### includeDMRs = TRUE, includeCpGs = FALSE
 
 ```{r}
-output <- findDMRs(Mset_train450k=Mset_train450k, 
+output <- find_dmrs(mset_train_flow_sort=Mset_train450k, 
                     verbose = TRUE, gr_target=NULL, 
-                    numRegions = 50, numProbes=50,
-                    includeCpGs = FALSE, includeDMRs = TRUE, 
+                    num_regions = 50, num_cpgs = 50,
+                    include_cpgs = FALSE, include_dmrs = TRUE, 
                     bumphunter_beta_cutoff = 0.2, # defined by bumphunter
                     dmr_up_cutoff = 0.5, # smaller is better
                     dmr_down_cutoff = 0.4, # smaller is better
@@ -65,14 +64,14 @@ output <- findDMRs(Mset_train450k=Mset_train450k,
                     cpg_pval_cutoff = 1e-08, # default of 1e-08
                     cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
                     cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwiseComparison = FALSE)
-table(duplicated(output$regions)) # 
-table(output$regions$cellType, output$regions$L)
-table(output$regions$cellType, output$regions$status)
-table(output$regions$cellType, output$regions$L, 
-      output$regions$dmr_status, output$regions$status)
+                    pairwise_comparison = FALSE)
+table(duplicated(output$regions_all)) # 
+table(output$regions_all$cellType, output$regions_all$L)
+table(output$regions_all$cellType, output$regions_all$status)
+table(output$regions_all$cellType, output$regions_all$L, 
+      output$regions_all$dmr_status, output$regions_all$status)
 
-p1 <- as.data.frame(mcols(output$regions)) %>% 
+p1 <- as.data.frame(mcols(output$regions_all)) %>% 
   ggplot(aes(x = dm, y = -log(p.value),
              color = dmr_status)) +
   geom_point() + 
@@ -80,7 +79,7 @@ p1 <- as.data.frame(mcols(output$regions)) %>%
   geom_hline(yintercept=-log(1e-08))
 
 
-p2 <- as.data.frame(mcols(output$regions)) %>% 
+p2 <- as.data.frame(mcols(output$regions_all)) %>% 
   ggplot(aes(x = dm, y = -log(p.value),
              color = cellType)) +
   geom_point() + 
@@ -91,15 +90,18 @@ plot_grid(p1, p2)
 
 mypar()
 for(i in 51:60){
-  output$regions[i,]
-  plot(output$y[i,],col=rafalib::as.fumeric(as.character(output$cell)),main=i,ylim=c(0,1))
+  output$regions_all[i,]
+  plot(output$y_regions[i,], 
+       col = rafalib::as.fumeric(as.character(output$cell)), 
+       main = i,
+       ylim = c(0,1))
   abline(h=0.5); 
-  legend("bottomright",output$cellLevels,col=1:6,pch=16)
+  legend("bottomright", output$cell_levels,col=1:6,pch=16)
   Sys.sleep(1)
 }
 
 par(mfrow=c(1,3))
-image(t(output$housemanCpGs),  xaxt="n", main = "Houseman top 600 CpGs")
+image(t(output$cpgs_houseman),  xaxt="n", main = "Houseman top 600 CpGs")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
 image(t(output$profiles),  xaxt="n", main = "DMRs")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
@@ -107,7 +109,7 @@ image(t(output$zmat),  xaxt="n", main = "zmat")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
 
 p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
-target <- t(apply(as.data.frame(mcols(output$regions))[,1:2],1,function(ind){
+target <- t(apply(as.data.frame(mcols(output$regions_all))[,1:2],1,function(ind){
     colMeans(p[(ind[1]):(ind[2]),,drop=FALSE]) }))
  
 ##quick and dirty regresion to cell counts:
@@ -130,12 +132,11 @@ heatmap.2(t(estimates),
 
 ## pairwiseComparison = TRUE
 
-
 ```{r}
-outputPairs <- findDMRs(Mset_train450k=Mset_train450k, 
+outputPairs <- find_dmrs(mset_train_flow_sort=Mset_train450k, 
                     verbose = TRUE, gr_target=NULL, 
-                    numRegions = 50, numProbes=50,
-                    includeCpGs = FALSE, includeDMRs = TRUE, 
+                    num_regions = 50, num_cpgs = 50,
+                    include_cpgs = FALSE, include_dmrs = TRUE, 
                     bumphunter_beta_cutoff = 0.2, # defined by bumphunter
                     dmr_up_cutoff = 0.5, # smaller is better
                     dmr_down_cutoff = 0.4, # smaller is better
@@ -143,14 +144,14 @@ outputPairs <- findDMRs(Mset_train450k=Mset_train450k,
                     cpg_pval_cutoff = 1e-08, # default of 1e-08
                     cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
                     cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwiseComparison = TRUE)
-table(duplicated(outputPairs$regions)) # 
-table(outputPairs$regions$cellType, outputPairs$regions$L)
-table(outputPairs$regions$cellType, outputPairs$regions$status)
-table(outputPairs$regions$cellType, outputPairs$regions$L, 
-      outputPairs$regions$dmr_status, outputPairs$regions$status)
+                    pairwise_comparison = TRUE)
+table(duplicated(outputPairs$regions_all)) # 
+table(outputPairs$regions_all$cellType, outputPairs$regions_all$L)
+table(outputPairs$regions_all$cellType, outputPairs$regions_all$status)
+table(outputPairs$regions_all$cellType, outputPairs$regions_all$L, 
+      outputPairs$regions_all$dmr_status, outputPairs$regions_all$status)
 
-p1 <- as.data.frame(mcols(outputPairs$regions)) %>% 
+p1 <- as.data.frame(mcols(outputPairs$regions_all)) %>% 
   ggplot(aes(x = dm, y = -log(p.value),
              color = dmr_status)) +
   geom_point() + 
@@ -158,7 +159,7 @@ p1 <- as.data.frame(mcols(outputPairs$regions)) %>%
   geom_hline(yintercept=-log(1e-08))
 
 
-p2 <- as.data.frame(mcols(outputPairs$regions)) %>% 
+p2 <- as.data.frame(mcols(outputPairs$regions_all)) %>% 
   ggplot(aes(x = dm, y = -log(p.value),
              color = cellType)) +
   geom_point() + 
@@ -168,25 +169,27 @@ p2 <- as.data.frame(mcols(outputPairs$regions)) %>%
 plot_grid(p1, p2)
 
 mypar()
-for(i in 101:105){
-  outputPairs$regions[i,]
-  plot(outputPairs$y[i,],col=rafalib::as.fumeric(as.character(outputPairs$cell)),main=i,ylim=c(0,1))
+for(i in 51:60){
+  outputPairs$regions_all[i,]
+  plot(outputPairs$y_regions[i,], 
+       col = rafalib::as.fumeric(as.character(outputPairs$cell)), 
+       main = i,
+       ylim = c(0,1))
   abline(h=0.5); 
-  legend("bottomright",outputPairs$cellLevels,col=1:6,pch=16)
+  legend("bottomright", outputPairs$cell_levels,col=1:6,pch=16)
   Sys.sleep(1)
 }
 
 par(mfrow=c(1,3))
-image(t(outputPairs$housemanCpGs),  xaxt="n", main = "Houseman top 600 CpGs")
+image(t(outputPairs$cpgs_houseman),  xaxt="n", main = "Houseman top 600 CpGs")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(outputPairs$zmat))
 image(t(outputPairs$profiles),  xaxt="n", main = "DMRs")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(outputPairs$zmat))
 image(t(outputPairs$zmat),  xaxt="n", main = "zmat")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(outputPairs$zmat))
 
-p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"], 
-             type = "Illumina") # beta values
-target <- t(apply(as.data.frame(mcols(outputPairs$regions))[,1:2],1,function(ind){
+p <- getBeta(Mset_train450k[, pData(Mset_train450k)$Sample_Name != "CD8+_105"] ) # beta values
+target <- t(apply(as.data.frame(mcols(outputPairs$regions_all))[,1:2],1,function(ind){
     colMeans(p[(ind[1]):(ind[2]),,drop=FALSE]) }))
  
 ##quick and dirty regresion to cell counts:
