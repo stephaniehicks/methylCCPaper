@@ -11,7 +11,7 @@ library(quadprog)
 # library(methylCC) # on Github
 
 dataPath_blsa <- "/users/shicks1/data/DNAm/2017-blsa-450-cellsort"
-dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
+# dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
 workingDir_blsa <- "/users/shicks1/projects/methylCCPaper/case-studies/2017-blsa-450-cellsort"
 
 # # Create a MethylSet object ('Mset')
@@ -19,7 +19,7 @@ workingDir_blsa <- "/users/shicks1/projects/methylCCPaper/case-studies/2017-blsa
 # Mset_train450k <- preprocessIllumina(updateObject(FlowSorted.Blood.450k))
 # Mset_train450k <- mapToGenome(Mset_train450k, mergeManifest = FALSE)
 # save(Mset_train450k, file=file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
-load(file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
+# load(file.path(dataPath_flowSort, "FlowSorted-Mset-Illumina.rda"))
 
 # FlowSorted.Blood.450k <- updateObject(FlowSorted.Blood.450k)
 # Mset_train450k <- preprocessQuantile(FlowSorted.Blood.450k)
@@ -67,7 +67,7 @@ counts450K$Lymph <-
 counts450K <- counts450K[, colnames(counts450K) %in% c("Gran", "Mono", "Lymph")]
 
 ##### 
-keepSamples <- 1:100 # seq_len(nrow(counts450K)) # 1:50
+keepSamples <- seq_len(nrow(counts450K)) # 1:50
 counts450K <- counts450K[keepSamples,]
 boxplot(counts450K, ylim = c(0,1))
 df.Houseman <- tidyr::gather(cbind("samples" = rownames(counts450K), counts450K), celltype, est, -samples)
@@ -128,14 +128,14 @@ image(t(output$profiles),  xaxt="n", main = "DMRs")
 axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
 
 # run methylCC::estimatecc
-set.seed(12345)
-est <- estimatecc(object = RGset[,keepSamples], 
-                  find_dmrs_object = output, 
-                  verbose = TRUE, epsilon = 0.01, 
-                  max_iter = 100, init_param_method = "random")
-# save(est, file = file.path(dataPath_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
+# set.seed(12345)
+# est <- estimatecc(object = RGset[,keepSamples], 
+#                   find_dmrs_object = output, 
+#                   verbose = TRUE, epsilon = 0.01, 
+#                   max_iter = 100, init_param_method = "random")
+# save(est, file = file.path(workingDir_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
 
-# load(file.path(dataPath_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
+load(file.path(workingDir_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
 counts.450k.Hicks <- cell_counts(est)
 rownames(counts.450k.Hicks) <- colnames(RGset[,keepSamples])
 
@@ -166,8 +166,7 @@ dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Lymph", "Mono", "
 dfcombined <- tidyr::gather(dfcombined, model, est, -c(samples, celltype, Truth))
 dfcombined$model <- factor(dfcombined$model, levels = c("Houseman", "Hicks"))
 
-dfcombined %>% 
-  ggplot(aes(x=Truth, y = est, colour=celltype)) + 
+ggplot(dfcombined, aes(x=Truth, y = est, colour=celltype)) + 
     geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
     facet_grid(model ~.) + geom_point() +
     xlab("True Cell Composition (measured with flow cytometry)") + ylab("Model-based Cell Composition Estimates")

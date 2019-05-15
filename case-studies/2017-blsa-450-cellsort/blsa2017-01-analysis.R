@@ -7,7 +7,6 @@ library(methylCC)
 ################################################
 
 dataPath_blsa <- "/users/shicks1/data/DNAm/2017-blsa-450-cellsort"
-dataPath_flowSort <- "/users/shicks1/data/DNAm/FlowSortedBlood450k"
 workingDir_blsa <- "/users/shicks1/projects/methylCCPaper/case-studies/2017-blsa-450-cellsort"
 
 
@@ -38,9 +37,22 @@ colnames(trueProps) <- c("samples", "Baso", "Eos", "Neu", "Lymph", "Mono", "Gran
 # counts450K <- estimateCellCounts(RGset)
 # save(counts450K, file = file.path(workingDir_blsa, "ests/dataBLSA-minfi-estimateCellCounts.RData"))
 
-# compare to compote::estimateCC method
+# compare to compote::estimatecc method
+output <- find_dmrs(verbose = TRUE, gr_target = NULL, 
+                    num_regions = 50, num_cpgs = 50,
+                    include_cpgs = FALSE, include_dmrs = TRUE, 
+                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
+                    dmr_up_cutoff = 0.50, # smaller is better
+                    dmr_down_cutoff = 0.40, # smaller is better
+                    dmr_pval_cutoff = 1e-11, # default of 1e-11
+                    cpg_pval_cutoff = 1e-08, # default of 1e-08
+                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
+                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
+                    pairwise_comparison = FALSE)
+
 set.seed(12345)
 est <- estimatecc(object = RGset,
+                  find_dmrs_object = output, 
                   verbose = TRUE, epsilon = 0.01, 
                   max_iter = 100, init_param_method = "random")
 save(est, file = file.path(workingDir_blsa, "ests/dataBLSA-methylCC-estimatecc.RData"))
