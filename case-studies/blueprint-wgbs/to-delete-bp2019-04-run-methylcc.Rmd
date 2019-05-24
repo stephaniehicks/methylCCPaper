@@ -1,0 +1,125 @@
+---
+title: "Run Houseman model and methylcc on WGBS data"
+output: html_document
+---
+
+```{r}
+library(bsseq)
+library(methylCC)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+workingDir_blueprint <- 
+  "/users/shicks1/projects/methylCCPaper/case-studies/blueprint-wgbs"
+dataPath <- "/users/shicks1/data/DNAm/blueprint_ihec"
+```
+
+# Create WGBS `bsseq` objects
+
+```{r}
+
+df.450k.Hicks = tidyr::gather(cbind("samples" = pData(RGset_target450k)$sampleID, 
+                              "ID" = pData(RGset_target450k)$ID, counts.450k.Hicks),
+                       celltype, est, -samples, -ID)
+
+dfcombined <- dplyr::full_join(df.450k.Houseman, df.450k.Hicks, by = c("samples", "celltype"))
+dfcombined$celltype <- factor(dfcombined$celltype, levels = c("CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran"))
+
+dfcombined %>% 
+  ggplot(aes(x=est.x, y = est.y, colour = celltype)) +
+    geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+     geom_point() +
+    xlab("Using minfi::estimateCellCounts()") + ylab("Using methylCC::estimateCC()") +
+    labs(title = "Comparing cell composition estimates (450K data only)")
+```
+
+
+```{r}
+for(bios in levels(custom_table$biosource)){
+  # create sub tables
+  custom_table_call <- custom_table[custom_table$biosource %in% bios & 
+                                     grepl("_calls.bs_call", custom_table$file_name), ]
+  custom_table_cov <- custom_table[custom_table$biosource %in% bios & 
+                                     grepl("_calls.bs_cov", custom_table$file_name), ]
+  
+  # .call files
+  out.gr <- vector("list", nrow(custom_table_call))
+  for(bws in seq_along(custom_table_call$file_name)){
+    out.gr[[bws]] <- import(file.path(dataPath, "tmp", 
+                                      custom_table_call$file_name[bws]), 
+                            format = "bigWig")
+    colnames(mcols(out.gr[[bws]])) <-  custom_table_call$file_name[bws]
+  }
+  out_call <- do.call("c", out.gr)
+  rm(out.gr) 
+  saveRDS(out_call, file = file.path(dataPath,
+                                     paste0("blueprint_blood_", 
+                                     unique(custom_table_cov$biosource_short), "_call.RDS")))
+  # .cov files
+  out.gr <- vector("list", nrow(custom_table_cov))
+  for(bws in seq_along(custom_table_cov$file_name)){
+    out.gr[[bws]] <- import(file.path(dataPath, "tmp", 
+                                      custom_table_cov$file_name[bws]), 
+                            format = "bigWig")
+    colnames(mcols(out.gr[[bws]])) <-  custom_table_cov$file_name[bws]
+  }
+  out_cov <- do.call("c", out.gr)
+  rm(out.gr) 
+  saveRDS(out_cov, file = file.path(dataPath,
+                                     paste0("blueprint_blood_", 
+                                     unique(custom_table_cov$biosource_short), "_cov.RDS")))
+  # bsseq objects
+  methyl <- round(mcols(out_call) * mcols(out_cov))
+  colnames(methyl) <- colnames(mcols(out_cov))
+
+  mcols(out_call)[is.na(mcols(out_call))] <- 0 # remove NAs
+  mcols(out_cov)[is.na(mcols(out_cov))] <- 0 # remove NAs
+  
+  BS <- BSseq(pos = start(out_cov),
+              chr = as.character(seqnames(out_cov)),
+              M = as.matrix(methyl),
+              Cov = as.matrix(mcols(out_cov)),
+              rmZeroCov = TRUE)
+  }
+```
+
+
+```{r}
+library(rtracklayer)
+bw_files <- unlist(lapply(stringr::str_split(custom_table$file_path, 
+                                             "CNAG/"), function(x){ x[[2]]}))
+bw_files_call <- bw_files[grepl("_calls.bs_call", bw_files)]
+bw_files_cov <- bw_files[grepl("_calls.bs_cov", bw_files)]
+
+out.gr <- vector("list", length(bw_files_call))
+for(bws in seq_along(bw_files_call)){
+  out.gr[[bws]] <- import(file.path(dataPath, "tmp",
+                                    bw_files_call[bws]), 
+                          format = "bigWig")
+  colnames(mcols(out.gr[[bws]])) <-  bw_files_call[bws]
+}
+out_call <- do.call("c", out.gr)
+saveRDS(out_call, file = file.path(dataPath,"blueprint_blood_call.RDS"))
+
+out.gr <- vector("list", length(bw_files_cov))
+for(bws in seq_along(bw_files_cov)){
+  out.gr[[bws]] <- import(file.path(dataPath, "tmp", bw_files_cov[bws]), format = "bigWig")
+  colnames(mcols(out.gr[[bws]])) <-  bw_files_cov[bws]
+}
+out_cov <- do.call("c", out.gr)
+saveRDS(out_cov, file = file.path(dataPath,"blueprint_blood_cov.RDS"))
+
+
+
+
+```
+
+
+
+
+
+
+
+
+

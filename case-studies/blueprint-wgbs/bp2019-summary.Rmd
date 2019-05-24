@@ -1,0 +1,49 @@
+---
+title: "Untitled"
+author: "Stephanie Hicks"
+date: "5/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+library(bsseq)
+
+workingDir_blueprint <- 
+  "/users/shicks1/projects/methylCCPaper/case-studies/blueprint-wgbs"
+dataPath <- "/users/shicks1/data/DNAm/blueprint_ihec"
+
+```
+
+```{r}
+custom_table <- readRDS(file = file.path(dataPath,"blueprint_blood_custom_table.RDS"))
+keep_biosource <- c("CD14-positive, CD16-negative classical monocyte", 
+                    "CD8-positive, alpha-beta T cell", "CD4-positive, alpha-beta T cell", 
+                    "CD38-negative naive B cell")
+custom_table$file_name <- unlist(lapply(stringr::str_split(custom_table$file_path, "CNAG/"), 
+                                        function(x){ x[[2]]}))
+custom_table$biosource_short <- unlist(lapply(stringr::str_split(custom_table$biosource, "-"), 
+                                              function(x){ x[[1]]}))
+```
+
+
+```{r}
+library(ggplot2)
+score_matrix_plot = tidyr::gather(genome_wide_score_matrix[1:50,],
+    "experiment", "methylation", -CHROMOSOME, -START, -END)
+score_matrix_plot$START <- as.factor(score_matrix_plot$START)
+ggplot(score_matrix_plot, aes(x=START, y=experiment, fill=methylation)) +
+    geom_tile() +
+    theme(axis.text.x=element_text(angle=-90))
+
+
+```
+

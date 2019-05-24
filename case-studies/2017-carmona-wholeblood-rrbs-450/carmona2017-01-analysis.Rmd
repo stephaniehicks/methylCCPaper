@@ -3,21 +3,21 @@ title: "dataFromCarmona whole blood samples processed on RRBS and 450k"
 output: html_document
 ---
 
-```{r, echo=FALSE}
+```{r}
 library(dplyr)
 library(ggplot2)
 library(cowplot)
 library(minfi)
 library(bsseq)
 library(quadprog)
-# library(methylCC)
+library(methylCC)
 library(GenomicRanges)
 
 workingDir_carmona2017 <- 
   "/users/shicks1/projects/methylCCPaper/case-studies/2017-carmona-wholeblood-rrbs-450"
 dataPath <- "/users/shicks1/data/DNAm/2017-carmona-wholeblood-rrbs-450"
 
-estimateCellCounts.modified <- function (rgSet, compositeCellType = "Blood", 
+estimateCellCounts.modified <- function(rgSet, compositeCellType = "Blood", 
                                          processMethod = "auto", probeSelect = "auto", 
                                 cellTypes = c("CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran"),
                                 referencePlatform = c("IlluminaHumanMethylation450k", 
@@ -240,7 +240,7 @@ mcols(gr_targetbs) <- p_targetbs
 
 # Run `estimateCellCounts.modified ()` (Houseman model) on `RGset_target450k` 
 
-```{r} 
+```{r}
 # results.450k.Houseman <- 
 #   estimateCellCounts.modified(RGset_target450k, 
 #                               returnAll = TRUE, 
@@ -271,32 +271,32 @@ df.450k.Houseman <-
 
 # Run `methylCC::estimatecc()` on `RGset_target450k` 
 
-```{r} 
-# output <- find_dmrs(verbose = TRUE, gr_target = NULL, 
-#                     num_regions = 50, num_cpgs = 50,
-#                     include_cpgs = FALSE, include_dmrs = TRUE, 
-#                     bumphunter_beta_cutoff = 0.2, # defined by bumphunter
-#                     dmr_up_cutoff = 0.50, # smaller is better
-#                     dmr_down_cutoff = 0.40, # smaller is better
-#                     dmr_pval_cutoff = 1e-11, # default of 1e-11
-#                     cpg_pval_cutoff = 1e-08, # default of 1e-08
-#                     cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
-#                     cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-#                     pairwise_comparison = FALSE)
-# 
-# # run methylCC::estimatecc
-# set.seed(12345)
-# est <- estimatecc(object = RGset_target450k, 
-#                   find_dmrs_object = output, 
-#                   verbose = TRUE, epsilon = 0.01, 
-#                   max_iter = 100, init_param_method = "random")
-# counts.450k.Hicks <- cell_counts(est)
-# rownames(counts.450k.Hicks) <- colnames(RGset_target450k)
-# 
-# write.csv(counts.450k.Hicks,
-#           file = file.path(workingDir_carmona2017,
-#                 "ests/450k-methylCC-estimatecc.csv"),
-#           row.names = TRUE)
+```{r}
+output <- find_dmrs(verbose = TRUE, gr_target = NULL,
+                    num_regions = 50, num_cpgs = 50,
+                    include_cpgs = TRUE, include_dmrs = TRUE,
+                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
+                    dmr_up_cutoff = 0.50, # smaller is better
+                    dmr_down_cutoff = 0.40, # smaller is better
+                    dmr_pval_cutoff = 1e-11, # default of 1e-11
+                    cpg_pval_cutoff = 1e-08, # default of 1e-08
+                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
+                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
+                    pairwise_comparison = FALSE)
+
+# run methylCC::estimatecc
+set.seed(12345)
+est <- estimatecc(object = RGset_target450k,
+                  find_dmrs_object = output,
+                  verbose = TRUE, epsilon = 0.01,
+                  max_iter = 100, init_param_method = "random")
+counts.450k.Hicks <- cell_counts(est)
+rownames(counts.450k.Hicks) <- colnames(RGset_target450k)
+
+write.csv(counts.450k.Hicks,
+          file = file.path(workingDir_carmona2017,
+                "ests/450k-methylCC-estimatecc.csv"),
+          row.names = TRUE)
 
 counts.450k.Hicks <- 
   read.csv(file.path(workingDir_carmona2017, 
@@ -331,10 +331,12 @@ dim(output_nogr$cpgs_houseman) # 600 CpGs (no intersection with RRBS data)
 subsetByOverlaps(gr_targetbs, output_nogr$regions_houseman)
 # 102 CpGs out of 600 CpGs overlap
 
+sub_cpgs <- names(subsetByOverlaps(output_nogr$regions_houseman, gr_targetbs))
+
 counts.RRBS.Houseman <- 
   minfi:::projectCellType(as.data.frame(mcols(
               subsetByOverlaps(gr_targetbs, output_nogr$regions_houseman))), 
-              output_nogr$cpgs_houseman)
+              output_nogr$cpgs_houseman[sub_cpgs, ])
 rownames(counts.RRBS.Houseman) <- pData(BS)$ID
 
 # combine
@@ -342,17 +344,10 @@ df.RRBS.Houseman = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
                                        "ID" = pData(BS)$ID, 
                                        as.data.frame(counts.RRBS.Houseman)), 
                        celltype, est, -samples, -ID)
-
 ```
 
 
 # Run `minfi:::projectCellType()` (Houseman model modified)  on RRBS data
-
-
-```{r}
-x <- 5
-plot(rnorm(1000))
-```
 
 
 ```{r}
@@ -363,7 +358,8 @@ dim(output$cpgs_houseman) # 587 CpGs (with intersection with RRBS data)
 
 subsetByOverlaps(gr_targetbs, output$regions_houseman)
 # 587 CpGs out of 587 CpGs overlap
-# 300 CpGs out of 300 CpGs overlap
+
+subsetByOverlaps(output_nogr$regions_houseman, output$regions_houseman) # 102/102
 
 counts.RRBS.Houseman.mod <- 
   minfi:::projectCellType(as.data.frame(mcols( 
@@ -381,26 +377,24 @@ df.RRBS.Houseman.mod = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 
 
 ```{r}
-par(mfrow=c(1,2))
-image(t(output_nogr$cpgs_houseman), main = "Houseman")
-image(t(output$cpgs_houseman), main = "Houseman modified")
+pdf(file.path(workingDir_carmona2017, 
+              "figs/fig-carmona2017-houseman-coefs.pdf"), width = 10, height = 6)
+par(mfrow=c(1,3))
+image(t(output_nogr$cpgs_houseman), xaxt="n", main = "Houseman method:\ntop 600 CpGs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output_nogr$zmat))
+image(t(output_nogr$cpgs_houseman[sub_cpgs, ]), xaxt="n", main = "Houseman method:\n 102 out of top 600 CpGs overlapping")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output_nogr$zmat))
+image(t(output$cpgs_houseman), xaxt="n", main = "Houseman method (modified):\ntop 587 CpGs")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(output$zmat))
+dev.off()
 ```
 
 
 # Run `methylCC::estimatecc()` on a `BS` (RRBS data)
 
 ```{r}
-output_nogr <- find_dmrs(verbose = TRUE, gr_target = NULL, 
-                    num_regions = 50, num_cpgs = 50,
-                    include_cpgs = TRUE, include_dmrs = TRUE,
-                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
-                    dmr_up_cutoff = 0.50, # smaller is better
-                    dmr_down_cutoff = 0.40, # smaller is better
-                    dmr_pval_cutoff = 1e-11, # default of 1e-11
-                    cpg_pval_cutoff = 1e-08, # default of 1e-08
-                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
-                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwise_comparison = FALSE)
+output_nogr <- find_dmrs(gr_target = NULL, 
+                         include_cpgs = TRUE, include_dmrs = TRUE)
 
 table(output_nogr$regions_all$cellType, output_nogr$regions_all$L,
       output_nogr$regions_all$dmr_status, output_nogr$regions_all$status)
@@ -411,7 +405,6 @@ p1 <- as.data.frame(mcols(output_nogr$regions_all)) %>%
   geom_point() +
   geom_hline(yintercept=-log(1e-11)) +
   geom_hline(yintercept=-log(1e-08))
-
 
 p2 <- as.data.frame(mcols(output_nogr$regions_all)) %>%
   ggplot(aes(x = dm, y = -log(p.value),
@@ -453,18 +446,10 @@ df.RRBS.Hicks = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 # Run `methylCC::estimatecc()` modified on a `BS` (RRBS data)
 
 ```{r}
-gr_targetbs <- granges(BS)
-output <- find_dmrs(verbose = TRUE, gr_target = gr_targetbs,
-                    num_regions = 50, num_cpgs = 50,
-                    include_cpgs = TRUE, include_dmrs = TRUE,
-                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
-                    dmr_up_cutoff = 0.50, # smaller is better
-                    dmr_down_cutoff = 0.40, # smaller is better
-                    dmr_pval_cutoff = 1e-11, # default of 1e-11
-                    cpg_pval_cutoff = 1e-08, # default of 1e-08
-                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
-                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwise_comparison = FALSE)
+output <- find_dmrs(gr_target = gr_targetbs,
+                    include_cpgs = FALSE, include_dmrs = TRUE)#,
+                    # cpg_up_dm_cutoff = -0.1, 
+                    # cpg_down_dm_cutoff = 0.1)
 
 table(output$regions_all$cellType, output$regions_all$L,
       output$regions_all$dmr_status, output$regions_all$status)
@@ -499,13 +484,13 @@ est <- estimatecc(object = BS,
 counts.RRBS.Hicks.mod <- cell_counts(est)
 rownames(counts.RRBS.Hicks.mod) <- pData(BS)$ID
 
-write.csv(counts.RRBS.Hicks.mod,
-          file = file.path(workingDir_carmona2017, "ests/rrbs-methylCC-estimatecc-mod.csv"),
-          row.names = TRUE)
+# write.csv(counts.RRBS.Hicks.mod,
+#           file = file.path(workingDir_carmona2017, "ests/rrbs-methylCC-estimatecc-mod.csv"),
+#           row.names = TRUE)
 
-counts.RRBS.Hicks.mod <- read.csv(file.path(workingDir_carmona2017,
-                                        "ests/rrbs-methylCC-estimatecc-mod.csv"), 
-                              row.names = 1)
+# counts.RRBS.Hicks.mod <- read.csv(file.path(workingDir_carmona2017,
+#                                         "ests/rrbs-methylCC-estimatecc-mod.csv"), 
+#                               row.names = 1)
 
 df.RRBS.Hicks.mod = tidyr::gather(cbind("samples" = pData(BS)$sampleID, 
                              "ID" = pData(BS)$ID, counts.RRBS.Hicks.mod), 
@@ -519,58 +504,155 @@ df.RRBS.Hicks.mod = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 ```{r}
 z.450k <- rbind(data.frame("Method" = rep("Houseman", nrow(df.450k.Houseman)), 
                       df.450k.Houseman),
-                data.frame("Method" = rep("Houseman.mod", nrow(df.450k.Houseman)), 
+                data.frame("Method" = rep("Houseman (modified)", nrow(df.450k.Houseman)), 
                       df.450k.Houseman),
-                data.frame("Method" = rep("methylCC", nrow(df.450k.Hicks)), 
+                data.frame("Method" = rep("methylCC-old", nrow(df.450k.Hicks)), 
                       df.450k.Hicks),
-                data.frame("Method" = rep("methylCC.mod", nrow(df.450k.Hicks)), 
+                data.frame("Method" = rep("methylCC", nrow(df.450k.Hicks)), 
                       df.450k.Hicks))
 
 z.rrbs <- rbind(data.frame("Method" = rep("Houseman", nrow(df.RRBS.Houseman)), 
                       df.RRBS.Houseman),
-                data.frame("Method" = rep("Houseman.mod", nrow(df.RRBS.Houseman.mod)), 
+                data.frame("Method" = rep("Houseman (modified)", nrow(df.RRBS.Houseman.mod)), 
                       df.RRBS.Houseman.mod), 
-                data.frame("Method" = rep("methylCC", nrow(df.RRBS.Hicks)), 
+                data.frame("Method" = rep("methylCC-old", nrow(df.RRBS.Hicks)), 
                       df.RRBS.Hicks), 
-                data.frame("Method" = rep("methylCC.mod", nrow(df.RRBS.Hicks.mod)), 
+                data.frame("Method" = rep("methylCC", nrow(df.RRBS.Hicks.mod)), 
                       df.RRBS.Hicks.mod))
-
-# df.all <- rbind(data.frame("Platform" = rep("450k", nrow(z.450k)), z.450k),
-#                 data.frame("Platform" = rep("RRBS", nrow(z.rrbs)), z.rrbs))
 
 df.all <- full_join(z.450k, z.rrbs, by = c("Method", "ID", "celltype"))
 colnames(df.all)[colnames(df.all) %in% c("est.x", "est.y")] <- 
   c("450K platform", "RRBS platform")
-      
 df.all$celltype <- factor(df.all$celltype)
 
-# gmat <- ggplot(df.all, aes(x=est.x, y = est.y, color = Method)) + 
-#   facet_wrap(~celltype) + geom_point(size = 2) + 
-#   geom_abline(intercept = 0, slope = 1, color = "gray", linetype = 2) + 
-#   xlim(0,1) + ylim(0,1) +
-#   xlab("450K platform") + 
-#   ylab("RRBS platform") + theme(legend.position="top") + 
-#   labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms")
+dat_text <- as_tibble(df.all) %>% 
+  group_by(Method) %>% 
+  mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
+  summarize(rmse=mean(sq_diff)) %>% 
+  mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
+  mutate(x = rep(0, 4)) %>% 
+  mutate(y = rep(0.75,4))
+dat_text
 
-
-
-
-# colored by cell type
-# gmat <- 
-ggplot(df.all, aes(x=`450K platform`, y = `RRBS platform`, color = celltype)) + 
-  facet_grid(~Method) + geom_point(size=3) + 
+gmat <-
+  df.all %>% 
+  ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
+  facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
   xlab("450K platform") + ylab("RRBS platform") + 
-  scale_color_discrete(name = "Cell type") + 
   theme(legend.position = "top", legend.justification= "center") + 
-  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms")
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+gmat <- gmat + geom_text(
+  data    = dat_text,
+  mapping = aes(x = x, y = y, label = label),
+  hjust   = -0.1,
+  vjust   = -1,
+  size = 5, 
+  fontface=2
+)
 
-pdf(file.path(dataPath, "figs/array_rrbs_BothMethods.pdf"), width = 8, height = 5)
+pdf(file.path(workingDir_carmona2017, 
+              "figs/fig-carmona2017-houseman-ests-all.pdf"), width = 12, height = 5)
 print(gmat)
 dev.off()
 
 
-pdf(file.path(dataPath, "figs/rafagrant_short.pdf"), width = 7, height =7)
+
+
+dat_text <- as_tibble(df.all) %>% 
+  group_by(Method) %>% 
+  mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
+  summarize(rmse=mean(sq_diff)) %>% 
+  mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
+  mutate(x = rep(0, 4)) %>% 
+  mutate(y = rep(0.75,4)) %>% 
+  filter(!(Method %in% c("methylCC-old")))
+dat_text
+
+gmat <-
+  df.all %>% 
+  filter(!(Method %in% c("methylCC-old"))) %>%
+  ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
+  facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
+  geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+  xlab("450K platform") + ylab("RRBS platform") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+gmat <- gmat + geom_text(
+  data    = dat_text,
+  mapping = aes(x = x, y = y, label = label),
+  hjust   = -0.1,
+  vjust   = -1,
+  size = 5, 
+  fontface=2
+)
+
+pdf(file.path(workingDir_carmona2017, 
+              "figs/fig-carmona2017-houseman-ests-all-3.pdf"), width = 10, height = 5)
+print(gmat)
+dev.off()
+
+
+dat_text <- as_tibble(df.all) %>% 
+  group_by(Method) %>% 
+  mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
+  summarize(rmse=mean(sq_diff)) %>% 
+  mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
+  mutate(x = rep(0, 4)) %>% 
+  mutate(y = rep(0.75,4)) %>% 
+  filter(!(Method %in% c("methylCC-old", "Houseman (modified)")))
+dat_text
+
+gmat <-
+  df.all %>% 
+  filter(!(Method %in% c("methylCC-old", "Houseman (modified)"))) %>%
+  ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
+  facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
+  geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+  xlab("450K platform") + ylab("RRBS platform") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+gmat <- gmat + geom_text(
+  data    = dat_text,
+  mapping = aes(x = x, y = y, label = label),
+  hjust   = -0.1,
+  vjust   = -1,
+  size = 5, 
+  fontface=2
+)
+
+
+pdf(file.path(workingDir_carmona2017, 
+              "figs/fig-carmona2017-houseman-ests-all-2.pdf"), width = 8, height = 5)
+print(gmat)
+dev.off()
+
+
+
+gmat <-
+  df.all %>% 
+  filter(Method %in% c("Houseman")) %>%
+  ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
+  geom_point(size=3, aes(color = celltype)) + 
+  geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+  xlab("450K platform") + ylab("RRBS platform") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+
+pdf(file.path(workingDir_carmona2017, 
+              "figs/fig-carmona2017-houseman-ests-all-1.pdf"), width = 6, height = 6)
 print(gmat)
 dev.off()
 
