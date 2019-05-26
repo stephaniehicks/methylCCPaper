@@ -1,6 +1,7 @@
 library(DeepBlueR)
 library(foreach)
 library(data.table)
+library(readr)
 
 workingDir_blueprint <- 
   "/users/shicks1/projects/methylCCPaper/case-studies/blueprint-wgbs"
@@ -22,9 +23,9 @@ deepblue_list_experiments()
 # next we search experiments
 keep_biosource <- c("CD14-positive, CD16-negative classical monocyte", 
                     "CD8-positive, alpha-beta T cell", "CD4-positive, alpha-beta T cell", 
-                    "CD38-negative naive B cell")
-# c("venous_blood", "mature neutrophil", "mature eosinophil", 
-#    "naive B cell", "peripheral blood mononuclear cell")
+                    "CD38-negative naive B cell", 
+                    "cytotoxic CD56-dim natural killer cell", 
+                    "mature neutrophil", "mature eosinophil")
 
 blueprint_DNA_meth <- deepblue_list_experiments(genome = "GRCh38",
                                                 epigenetic_mark = "DNA Methylation",
@@ -81,7 +82,6 @@ head(custom_table)
 write_csv(data.frame(paste0("ftp://ftp.ebi.ac.uk/pub/databases/", custom_table$file_path)), 
           file.path(dataPath,"blueprint_blood_ftp_paths.csv"), 
           col_names = FALSE)
-
 
 # **note**After much effort, I failed to download the WGBS data 
 # from the deepblueR bioconductor package or from the API directly. 

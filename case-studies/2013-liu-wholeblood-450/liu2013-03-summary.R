@@ -1,4 +1,4 @@
-
+library(dplyr)
 library(ggplot2)
 library(cowplot)
 
@@ -34,17 +34,35 @@ df.Hicks <- tidyr::gather(cbind("samples" = rownames(counts450KHicks),
 dfcombined <- dplyr::full_join( df.Houseman, df.Hicks, by = c("samples", "celltype"))
 colnames(dfcombined) <- c("samples", "celltype", "Houseman", "methylCC")
 
+dat_text <- as_tibble(dfcombined) %>% 
+  group_by(celltype) %>% 
+  mutate(sq_diff = (`Houseman` - `methylCC`)^2) %>% 
+  summarize(rmse=mean(sq_diff)) %>% 
+  mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
+  mutate(x = rep(0, 6)) %>% 
+  mutate(y = rep(0.75,6))
+dat_text
+
 gmat <- 
   ggplot(dfcombined, aes(x=Houseman, y = methylCC)) +  # 
   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-  geom_point(aes(color=celltype)) + facet_wrap(~celltype) + 
-  theme(legend.position="top") + 
+  geom_point(size = 3, aes(color=celltype)) + facet_wrap(~celltype) + 
+  theme(legend.position="top", legend.justification= "center") + 
   xlab("Houseman method") + ylab("methylCC") + 
   labs(title = "Model-based cell composition estimates from\nwhole blood samples (N=689, Li et al. 2013)", 
        color = "Cell type") + 
   scale_color_discrete(name = "Cell type", 
                        labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
                                   "Granulocytes","Monocytes", "Natural killer cells"))
+
+gmat <- gmat + geom_text(
+  data    = dat_text,
+  mapping = aes(x = x, y = y, label = label),
+  hjust   = -0.1,
+  vjust   = -1,
+  size = 5, 
+  fontface=2
+)
 
 pdf(file.path(workingDir_liu2013, 
               "figs/fig-liu2013-ests.pdf"), width = 8, height = 6)

@@ -25,25 +25,85 @@ dataPath <- "/users/shicks1/data/DNAm/blueprint_ihec"
 
 ```{r}
 custom_table <- readRDS(file = file.path(dataPath,"blueprint_blood_custom_table.RDS"))
-keep_biosource <- c("CD14-positive, CD16-negative classical monocyte", 
-                    "CD8-positive, alpha-beta T cell", "CD4-positive, alpha-beta T cell", 
-                    "CD38-negative naive B cell")
 custom_table$file_name <- unlist(lapply(stringr::str_split(custom_table$file_path, "CNAG/"), 
                                         function(x){ x[[2]]}))
 custom_table$biosource_short <- unlist(lapply(stringr::str_split(custom_table$biosource, "-"), 
                                               function(x){ x[[1]]}))
 ```
 
+Read in the results from methylcc
+```{r}
+counts_methylcc <- readRDS(file.path(dataPath, 
+                              "blueprint_blood_cc_methylcc.RDS"))
+# counts_methylcc <- readRDS(file.path(dataPath, 
+#                               "blueprint_blood_cc_methylcc-only-cpgs.RDS"))
+```
 
 ```{r}
-library(ggplot2)
-score_matrix_plot = tidyr::gather(genome_wide_score_matrix[1:50,],
-    "experiment", "methylation", -CHROMOSOME, -START, -END)
-score_matrix_plot$START <- as.factor(score_matrix_plot$START)
-ggplot(score_matrix_plot, aes(x=START, y=experiment, fill=methylation)) +
-    geom_tile() +
-    theme(axis.text.x=element_text(angle=-90))
+custom_table_sub <- custom_table %>% 
+  filter(grepl("calls.bs_call", name))
 
+custom_table_ordered <- 
+  custom_table_sub[match(rownames(counts_methylcc), 
+                       custom_table_sub$sample_name), ]  
+```
+
+  
+
+```{r}
+df_methylcc <- 
+  tidyr::gather(cbind("samples" = rownames(counts_methylcc), 
+                      "biosource" = custom_table_ordered$biosource,
+                      "biosource_short" = custom_table_ordered$biosource_short,
+                      counts_methylcc), 
+                celltype, est, -samples, -biosource, -biosource_short)
+
+df_methylcc$biosource <- 
+  factor(df_methylcc$biosource,
+         levels = c("CD4-positive, alpha-beta T cell",
+                    "CD8-positive, alpha-beta T cell", 
+                    "mature neutrophil", 
+                    "mature eosinophil", 
+                    "CD38-negative naive B cell", 
+                    "CD14-positive, CD16-negative classical monocyte", 
+                    "cytotoxic CD56-dim natural killer cell"))
+
+new_levels <- c("CD4-positive,\nalpha-beta T cell (N=12)", 
+                "CD8-positive,\nalpha-beta T cell (N=4)",
+                "mature neutrophil (N=12)", 
+                "mature eosinophil (N=2)",
+                "CD38-negative\nnaive B cell (N=4)", 
+                "CD14-positive, CD16-negative\nclassical monocyte (N=6)", 
+                "cytotoxic CD56-dim\nnatural killer cell (N=4)")
+levels(df_methylcc$biosource) <- new_levels
+
+gmat_dmr <- df_methylcc %>% 
+  ggplot(aes(x = biosource, y = est)) + 
+  geom_jitter(size=3, width = 0.25, aes(color = celltype)) + 
+  coord_flip() + 
+  xlab("cell types") +
+  ylab("methylCC") +
+  labs(title = "Cell composition estimates from purified whole blood\ncelltypes measured on WGBS platform\n(N=44, data from BLUEPRINT -- using only cell type-specific DMRs)", 
+         color = "Cell type") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+
+pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-only-cpgs.pdf"), 
+    width = 8, height = 6)
+print(gmat)
+dev.off()
+
+
+p1 <- plot_grid(gmat_cpg, gmat_dmr, ncol = 1, 
+                labels = LETTERS[1:2], label_size = 30)
+
+pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-both.pdf"), 
+    width = 10, height = 12)
+print(p1)
+dev.off()
 
 ```
+
 

@@ -4,13 +4,13 @@ output: html_document
 ---
 
 ```{r}
+library(methylCC)
 library(dplyr)
 library(ggplot2)
 library(cowplot)
 library(minfi)
 library(bsseq)
 library(quadprog)
-library(methylCC)
 library(GenomicRanges)
 
 workingDir_carmona2017 <- 
@@ -168,10 +168,11 @@ library(stringr)
 newnames <- sapply(pData(RGset_target450k)$sampleID, function(x){
   str_split(x, pattern = "_")[[1]][1] })
 pData(RGset_target450k)$ID <- newnames
-RGset_target450k <- RGset_target450k[, !(pData(RGset_target450k)$ID %in% "D07repC")]
+RGset_target450k <- RGset_target450k[, !(pData(RGset_target450k)$ID %in% 
+                                           c("D07repB", "D07repC"))]
 
 # create target450k datasets
-Mset_target450k <- preprocessIllumina(RGset_target450k) # preprocessIllumina preprocessQuantile
+Mset_target450k <- preprocessIllumina(RGset_target450k) 
 Mset_target450k <- mapToGenome(Mset_target450k, mergeManifest = FALSE)
 
 pd_target450k = as.data.frame(pData(Mset_target450k))
@@ -219,10 +220,11 @@ mcols(gr_target450k) <- p_target450k
 # saveRDS(BS, file=file.path(dataPath, "2017-carmona-bsseq-krawall.RDS"))
 
 BS <- readRDS(file.path(dataPath, "2017-carmona-bsseq-krawall.RDS"))
+BS <- BS[, !(pData(BS)$ID %in%  c("D07repB"))]
 
 cvg_targetbs <- as.data.frame(getBSseq(BS, type = "Cov"))
-M_targetbs <- as.data.frame(getBSseq(BS, type = "M"))
-p_targetbs <- as.data.frame(getMeth(BS, type="raw")) # meth / cvg
+M_targetbs <- as.data.frame(bsseq::getBSseq(BS, type = "M"))
+p_targetbs <- as.data.frame(bsseq::getMeth(BS, type="raw")) # meth / cvg
 p_targetbs <- as.data.frame(p_targetbs)
 pd_targetbs <- pData(BS)
 gr_targetbs <- granges(BS)
@@ -241,14 +243,14 @@ mcols(gr_targetbs) <- p_targetbs
 # Run `estimateCellCounts.modified ()` (Houseman model) on `RGset_target450k` 
 
 ```{r}
-# results.450k.Houseman <- 
-#   estimateCellCounts.modified(RGset_target450k, 
-#                               returnAll = TRUE, 
+# results.450k.Houseman <-
+#   estimateCellCounts.modified(RGset_target450k,
+#                               returnAll = TRUE,
 #                               celltypes = IDs)
 # counts.450k.Houseman <- results.450k.Houseman$counts
 # rownames(counts.450k.Houseman) <- pData(RGset_target450k)$sampleID
 # 
-# write.csv(counts.450k.Houseman, 
+# write.csv(counts.450k.Houseman,
 #           file = file.path(workingDir_carmona2017,
 #                 "ests/450k-minfi-estimateCellCounts.csv"),
 #           row.names = TRUE)
@@ -262,7 +264,7 @@ counts.450k.Houseman
 df.450k.Houseman <- 
   tidyr::gather(cbind("samples" = pData(RGset_target450k)$sampleID,
                                        "ID" = pData(RGset_target450k)$ID,
-                                "rep" = c(rep(TRUE, 2), rep(FALSE, 9)), 
+                                "rep" = c(rep(TRUE, 1), rep(FALSE, 9)), 
                                 as.data.frame(counts.450k.Houseman)), 
                           celltype, est, -samples, -rep, -ID) %>% 
   select(-rep)
@@ -272,31 +274,22 @@ df.450k.Houseman <-
 # Run `methylCC::estimatecc()` on `RGset_target450k` 
 
 ```{r}
-output <- find_dmrs(verbose = TRUE, gr_target = NULL,
-                    num_regions = 50, num_cpgs = 50,
-                    include_cpgs = TRUE, include_dmrs = TRUE,
-                    bumphunter_beta_cutoff = 0.2, # defined by bumphunter
-                    dmr_up_cutoff = 0.50, # smaller is better
-                    dmr_down_cutoff = 0.40, # smaller is better
-                    dmr_pval_cutoff = 1e-11, # default of 1e-11
-                    cpg_pval_cutoff = 1e-08, # default of 1e-08
-                    cpg_up_dm_cutoff = 0, # ranges from -infinity to 0
-                    cpg_down_dm_cutoff = 0, # ranges from 0 to infinity
-                    pairwise_comparison = FALSE)
-
-# run methylCC::estimatecc
-set.seed(12345)
-est <- estimatecc(object = RGset_target450k,
-                  find_dmrs_object = output,
-                  verbose = TRUE, epsilon = 0.01,
-                  max_iter = 100, init_param_method = "random")
-counts.450k.Hicks <- cell_counts(est)
-rownames(counts.450k.Hicks) <- colnames(RGset_target450k)
-
-write.csv(counts.450k.Hicks,
-          file = file.path(workingDir_carmona2017,
-                "ests/450k-methylCC-estimatecc.csv"),
-          row.names = TRUE)
+# output <- find_dmrs(gr_target = NULL,
+#                     include_cpgs = TRUE, include_dmrs = TRUE)
+# 
+# # run methylCC::estimatecc
+# set.seed(12345)
+# est <- estimatecc(object = RGset_target450k,
+#                   find_dmrs_object = output,
+#                   verbose = TRUE, epsilon = 0.01,
+#                   max_iter = 100, init_param_method = "random")
+# counts.450k.Hicks <- cell_counts(est)
+# rownames(counts.450k.Hicks) <- colnames(RGset_target450k)
+# 
+# write.csv(counts.450k.Hicks,
+#           file = file.path(workingDir_carmona2017,
+#                 "ests/450k-methylCC-estimatecc.csv"),
+#           row.names = TRUE)
 
 counts.450k.Hicks <- 
   read.csv(file.path(workingDir_carmona2017, 
@@ -349,7 +342,6 @@ df.RRBS.Houseman = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 
 # Run `minfi:::projectCellType()` (Houseman model modified)  on RRBS data
 
-
 ```{r}
 output <- find_dmrs(gr_target = gr_targetbs,
                     include_cpgs = TRUE, include_dmrs = TRUE)
@@ -393,44 +385,45 @@ dev.off()
 # Run `methylCC::estimatecc()` on a `BS` (RRBS data)
 
 ```{r}
-output_nogr <- find_dmrs(gr_target = NULL, 
-                         include_cpgs = TRUE, include_dmrs = TRUE)
-
-table(output_nogr$regions_all$cellType, output_nogr$regions_all$L,
-      output_nogr$regions_all$dmr_status, output_nogr$regions_all$status)
-
-p1 <- as.data.frame(mcols(output_nogr$regions_all)) %>%
-  ggplot(aes(x = dm, y = -log(p.value),
-             color = dmr_status)) +
-  geom_point() +
-  geom_hline(yintercept=-log(1e-11)) +
-  geom_hline(yintercept=-log(1e-08))
-
-p2 <- as.data.frame(mcols(output_nogr$regions_all)) %>%
-  ggplot(aes(x = dm, y = -log(p.value),
-             color = cellType)) +
-  geom_point() +
-  geom_hline(yintercept=-log(1e-11)) +
-  geom_hline(yintercept=-log(1e-08))
-
-plot_grid(p1, p2)
-
-# run methylCC::estimatecc
-set.seed(12345)
-est_nogr <- estimatecc(object = BS,
-                  find_dmrs_object = output_nogr,
-                  verbose = TRUE, epsilon = 0.01,
-                  max_iter = 100, init_param_method = "random")
-# [estimatecc] BSseq object contained
-#                 141 out of 600 celltype-specific regions.
-# [estimatecc] Starting parameter estimation using 141 regions.
-
-counts.RRBS.Hicks <- cell_counts(est_nogr)
-rownames(counts.RRBS.Hicks) <- pData(BS)$ID
-
-write.csv(counts.RRBS.Hicks,
-          file = file.path(workingDir_carmona2017, "ests/rrbs-methylCC-estimatecc.csv"),
-          row.names = TRUE)
+# output_nogr <- find_dmrs(gr_target = NULL, 
+#                          include_cpgs = TRUE, include_dmrs = TRUE)
+# 
+# table(output_nogr$regions_all$cellType, output_nogr$regions_all$L,
+#       output_nogr$regions_all$dmr_status, output_nogr$regions_all$status)
+# 
+# p1 <- as.data.frame(mcols(output_nogr$regions_all)) %>%
+#   ggplot(aes(x = dm, y = -log(p.value),
+#              color = dmr_status)) +
+#   geom_point() +
+#   geom_hline(yintercept=-log(1e-11)) +
+#   geom_hline(yintercept=-log(1e-08))
+# 
+# p2 <- as.data.frame(mcols(output_nogr$regions_all)) %>%
+#   ggplot(aes(x = dm, y = -log(p.value),
+#              color = cellType)) +
+#   geom_point() +
+#   geom_hline(yintercept=-log(1e-11)) +
+#   geom_hline(yintercept=-log(1e-08))
+# 
+# plot_grid(p1, p2)
+# 
+# # run methylCC::estimatecc
+# set.seed(12345)
+# est_nogr <- estimatecc(object = BS,
+#                   find_dmrs_object = output_nogr,
+#                   verbose = TRUE, epsilon = 0.01,
+#                   max_iter = 100, init_param_method = "random")
+# 
+# # [estimatecc] BSseq object contained
+# #                 141 out of 600 celltype-specific regions.
+# # [estimatecc] Starting parameter estimation using 141 regions.
+# 
+# counts.RRBS.Hicks <- cell_counts(est_nogr)
+# rownames(counts.RRBS.Hicks) <- pData(BS)$ID
+# 
+# write.csv(counts.RRBS.Hicks,
+#           file = file.path(workingDir_carmona2017, "ests/rrbs-methylCC-estimatecc.csv"),
+#           row.names = TRUE)
 
 counts.RRBS.Hicks <- read.csv(file.path(workingDir_carmona2017,
                                         "ests/rrbs-methylCC-estimatecc.csv"), 
@@ -446,51 +439,51 @@ df.RRBS.Hicks = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 # Run `methylCC::estimatecc()` modified on a `BS` (RRBS data)
 
 ```{r}
-output <- find_dmrs(gr_target = gr_targetbs,
-                    include_cpgs = FALSE, include_dmrs = TRUE)#,
-                    # cpg_up_dm_cutoff = -0.1, 
-                    # cpg_down_dm_cutoff = 0.1)
-
-table(output$regions_all$cellType, output$regions_all$L,
-      output$regions_all$dmr_status, output$regions_all$status)
-
-p1 <- as.data.frame(mcols(output$regions_all)) %>%
-  ggplot(aes(x = dm, y = -log(p.value),
-             color = dmr_status)) +
-  geom_point() +
-  geom_hline(yintercept=-log(1e-11)) +
-  geom_hline(yintercept=-log(1e-08))
-
-
-p2 <- as.data.frame(mcols(output$regions_all)) %>%
-  ggplot(aes(x = dm, y = -log(p.value),
-             color = cellType)) +
-  geom_point() +
-  geom_hline(yintercept=-log(1e-11)) +
-  geom_hline(yintercept=-log(1e-08))
-
-plot_grid(p1, p2)
-
-# run methylCC::estimatecc
-set.seed(12345)
-est <- estimatecc(object = BS,
-                  find_dmrs_object = output,
-                  verbose = TRUE, epsilon = 0.01,
-                  max_iter = 100, init_param_method = "random")
-# [estimatecc] BSseq object contained
-#                 520 out of 520 celltype-specific regions.
-# [estimatecc] Starting parameter estimation using 520 regions.
-
-counts.RRBS.Hicks.mod <- cell_counts(est)
-rownames(counts.RRBS.Hicks.mod) <- pData(BS)$ID
-
+# output <- find_dmrs(gr_target = gr_targetbs,
+#                     include_cpgs = TRUE, include_dmrs = TRUE)#,
+#                     # cpg_up_dm_cutoff = -0.1,
+#                     # cpg_down_dm_cutoff = 0.1)
+# 
+# table(output$regions_all$cellType, output$regions_all$L,
+#       output$regions_all$dmr_status, output$regions_all$status)
+# 
+# p1 <- as.data.frame(mcols(output$regions_all)) %>%
+#   ggplot(aes(x = dm, y = -log(p.value),
+#              color = dmr_status)) +
+#   geom_point() +
+#   geom_hline(yintercept=-log(1e-11)) +
+#   geom_hline(yintercept=-log(1e-08))
+# 
+# 
+# p2 <- as.data.frame(mcols(output$regions_all)) %>%
+#   ggplot(aes(x = dm, y = -log(p.value),
+#              color = cellType)) +
+#   geom_point() +
+#   geom_hline(yintercept=-log(1e-11)) +
+#   geom_hline(yintercept=-log(1e-08))
+# 
+# plot_grid(p1, p2)
+# 
+# # run methylCC::estimatecc
+# set.seed(12345)
+# est <- estimatecc(object = BS,
+#                   find_dmrs_object = output,
+#                   verbose = TRUE, epsilon = 0.01,
+#                   max_iter = 100, init_param_method = "random")
+# # [estimatecc] BSseq object contained
+# #                 520 out of 520 celltype-specific regions.
+# # [estimatecc] Starting parameter estimation using 520 regions.
+# 
+# counts.RRBS.Hicks.mod <- cell_counts(est)
+# rownames(counts.RRBS.Hicks.mod) <- pData(BS)$ID
+# 
 # write.csv(counts.RRBS.Hicks.mod,
 #           file = file.path(workingDir_carmona2017, "ests/rrbs-methylCC-estimatecc-mod.csv"),
 #           row.names = TRUE)
-
-# counts.RRBS.Hicks.mod <- read.csv(file.path(workingDir_carmona2017,
-#                                         "ests/rrbs-methylCC-estimatecc-mod.csv"), 
-#                               row.names = 1)
+# 
+counts.RRBS.Hicks.mod <- read.csv(file.path(workingDir_carmona2017,
+                                        "ests/rrbs-methylCC-estimatecc-mod.csv"),
+                              row.names = 1)
 
 df.RRBS.Hicks.mod = tidyr::gather(cbind("samples" = pData(BS)$sampleID, 
                              "ID" = pData(BS)$ID, counts.RRBS.Hicks.mod), 
@@ -646,7 +639,7 @@ gmat <-
   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
   xlab("450K platform") + ylab("RRBS platform") + 
   theme(legend.position = "top", legend.justification= "center") + 
-  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms (Houseman method)") + 
   scale_color_discrete(name = "Cell type", 
                        labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
                                   "Granulocytes","Monocytes", "Natural killer cells"))
@@ -659,173 +652,220 @@ dev.off()
 ```
 
 
+# Figure 2
 
+Uses Carmona et al. (2017) data loaded above
 
+### Figure 2A
 
+Example genomic region showing the observed methylation 
+levels for the same CpGs in the same whole blood 
+sample vary depending the platform technology used. 
 
+```{r create-Figure2A}
+library(Gviz)
+library(FlowSorted.Blood.450k)
 
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length=n+1)
+  hcl(h=hues, l=65, c=100)[1:n]
+}
 
-Delete after this point
+### Load FlowSorted.Blood.450k object for Figure 2A
+Mset <- preprocessIllumina(updateObject(FlowSorted.Blood.450k))
+Mset <- mapToGenome(Mset, mergeManifest = FALSE)
+pd = as.data.frame(pData(Mset))
+p = getBeta(Mset, type = "Illumina")
+colnames(p) = pd$Sample_Name = rownames(pd) = gsub("\\+","",pd$Sample_Name)
 
-# Extract 600 Houseman CpGs in RRBS data and run `minfi:::projectCellType()` on `BS` (RRBS data) 
+IDs = c("CD8T","CD4T", "NK","Bcell","Mono","Gran")
+p0 = p[,which(pd$CellType %in% IDs)]
+pd0 = pd[which(pd$CellType %in% IDs),]
 
-```{r}
-# !!!!!!!!!!! This should be deleted if GB rejects: 
+## Use this as the beta-value (b/c outlier at CD8T 105)
+p0 = p0[,-which(pd0$Sample_Name == "CD8_105")]
+pd0 = pd0[-which(pd0$Sample_Name == "CD8_105"),]
+pd0$CellType <- factor(pd0$CellType, levels = IDs)
 
-# # below needs to be run on odyssey
-# workingDir_jhuBloodtwoPlatforms <- "/net/irizarryfs01/srv/export/irizarryfs01/share_root/shicks/jhu/jhu-blood-twoPlatforms"
-# load(file.path(workingDir_jhuBloodtwoPlatforms, "450k", "jhu-blood-target450k-M1.counts.rda"))
-# gr_600CpGs <- granges(Mset_target450k)[rownames(M1.counts$coefs),]     # Mset_target450k is 450K samples
-# findOverlaps(granges(BS), gr_600CpGs) # only 91/600 CpGs overlap between RRBS and 450K sample (600 CpGs)
-# 
-# keepDMRs = methylCC:::pickTargetPositions(targetgRanges = gr_targetbs, targetObject = M_targetbs,
-#                                          targetCVG = cvg_targetbs, dmpRegions = gr_600CpGs)
-# keepDMRs$dmpGRanges
-# 
-# x <- findOverlaps(granges(BS), gr_600CpGs) # which of the 600 probes overlap with the RRBS data
-# 
-# # this shows there are >= 1 CpG in each of the categories of the 600 CpG design matrix
-# table(rep(1:12, each=50)[subjectHits(x)])
-# # > table(rep(1:12, each=50)[subjectHits(x)])
-# # 1  2  3  4  5  6  7  8  9 10 11 12
-# # 8 12  5 15  5 15  6  6  4  7  2  6
-# 
-# coefs <- M1.counts$coefs[subjectHits(x), ] # dim(coefs) = 91 x 6
-# counts.RRBS.Houseman <- minfi:::projectCellType(as.data.frame(mcols(keepDMRs$dmpGRanges)), coefs)
-# write.csv(counts.RRBS.Houseman, file = file.path(dataPath, "cellCountsEsts/rrbs_minfi-projectCellType.csv"),
-#           row.names = TRUE)
+# Extract chromosome and position information for each probe in 450k array (need this for regions)
+gr_train450k <- granges(Mset)
+mcols(gr_train450k) <- p0
 
+# merge 450k and RRBS data to same data object to create Gziv plot
+dat_all <- merge(gr_target450k, gr_targetbs, all=TRUE)
+genome(dat_all) <- "hg19"
+gtrack <- GenomeAxisTrack(cex=1.1)
 
+# find regions in 450k data that are on and off
+chr <- as.character(seqnames(gr_target450k))
+pos <- start(gr_target450k)
+cl <- clusterMaker(chr, pos, maxGap = 300)
+tab <- regionFinder(rowMeans(as.matrix(mcols(gr_target450k))), chr, pos, cl, cutoff=0.5)
 
+# plot example region: obs DNAm levels in 450k and RRBS samples
+ind <- 24
+tmp <-  methylCC:::.pick_target_positions(dat_all,  
+                            dmp_regions = shift(resize(makeGRangesFromDataFrame(tab[ind,]), 
+                                                       fix = "start", 8e3), 2e3))
 
-# !!!!!!!!!! Replace with this correct code if GB rejects. and re-run code. update figure. 
+dTrack_all <- DataTrack(tmp$probeGRanges, name = "Observed Methylation", type = c("p", "smooth"), 
+                        ylim=c(0, 1), cex.title=1.25, cex.axis=1.25, lwd = 3, degree = 1, span = 0.45, 
+                        col = gg_color_hue(2), cex= rep(1.5, 1.5))
 
-# # load 600 Houseman CpGs from estimateCellCounts.modified()
-# gr_600CpGs <- granges(Mset_target450k)[rownames(results.450k.Houseman$coefs),]  
-# findOverlaps(granges(BS), gr_600CpGs) # only 91/600 CpGs overlap between RRBS and 450K sample (600 CpGs)
-# 
-# keepDMRs = methylCC:::pickTargetPositions(targetgRanges = gr_targetbs, targetObject = M_targetbs,
-#                                          targetCVG = cvg_targetbs, dmpRegions = gr_600CpGs)
-# keepDMRs$dmpGRanges
-# 
-# x <- findOverlaps(granges(BS), gr_600CpGs) # which of the 600 probes overlap with the RRBS data
-# 
-# coefs <- results.450k.Houseman$coefs[subjectHits(x), ] # dim(coefs) = 91 x 6
-# counts.RRBS.Houseman <- minfi:::projectCellType(as.data.frame(mcols(keepDMRs$dmpGRanges)), coefs)
-# write.csv(counts.RRBS.Houseman, file = file.path(dataPath, "cellCountsEsts/rrbs_minfi-projectCellType.csv"),
-#           row.names = TRUE)
-
-
-
-counts.RRBS.Houseman <- read.csv(file.path(dataPath, "cellCountsEsts/rrbs_minfi-projectCellType.csv"), 
-                                 row.names = 1)
-counts.RRBS.Houseman = data.frame("Tcell" = rowSums(counts.RRBS.Houseman[,1:3]), counts.RRBS.Houseman[,c(4,5,6)])
-counts.RRBS.Houseman <- counts.RRBS.Houseman / rowSums(counts.RRBS.Houseman)
-
-# combine 
-df.RRBS.Houseman = gather(cbind("samples" = rownames(counts.RRBS.Houseman), 
-                                "ID" = pData(BS)$ID, counts.RRBS.Houseman), 
-                          celltype, est, -samples, -ID)
-dfcombined <- full_join(df.450k.Houseman, df.RRBS.Houseman, by = c("ID", "celltype"))
-dfcombined$celltype <- factor(dfcombined$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
-
-# colored by cell type
-gmat <- ggplot(dfcombined, aes(x=est.x, y = est.y, color = celltype)) + 
-  geom_point(size=3) + geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-  xlab("450K platform") + ylab("RRBS platform") + 
-  scale_color_discrete(name = "Cell type") + 
-  theme(legend.position = "top", legend.justification= "center") + 
-  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms (Houseman method)")
-
-pdf(file.path(dataPath, "figs/array-rrbs-Houseman.pdf"), width = 6, height = 6)
-print(gmat)
+pdf(file.path(workingDir_carmona2017, "figs/Fig2A-DMR-24.pdf"), width = 8, height = 5)
+plotTracks(list(dTrack_all, gtrack),
+           groups = rep(c("450k", "RRBS"), each = 10), 
+           main = "Chromosome 6",
+           cex.legend = 1.25, cex.main = 1.1)
 dev.off()
-
 ```
 
 
+### Figure 2B
 
-```{r}
-dfcombined <- dplyr::inner_join(df.450k.Houseman, df.RRBS.Hicks, 
-                         by = c("ID", "celltype"))
+Compare beta values (CpGs) in regions methylated or not methylated 
+using 450K platform and RRBS (Carmona et al. 2017 data). These 
+are the same samples measured on two different platform technologies. 
 
-gmat <- ggplot(dfcombined, aes(x=est.x, y = est.y)) + 
-  facet_wrap(~celltype) + geom_point() + 
-  geom_abline(intercept = 0, slope = 1) +  xlim(0,1) + ylim(0,1) +
-  xlab("450k data (methylCC))") + ylab("RRBS data (methylCC)") + 
-  labs(title = "Only 58/212 celltype-specific regions overlap")
+```{r create-Figure2B}
+#### 450k target data
 
-pdf(file.path(dataPath, "figs/array_rrbs_Hicks.pdf"), width = 8, height = 8)
-print(gmat)
+data(offMethRegions)
+data(onMethRegions)
+
+dat.d0.target450k = methylCC:::.pick_target_positions(target_granges = gr_target450k, 
+                                                      dmp_regions = offMethRegions)
+mu0.target450k <- rowMeans(as.data.frame(mcols(dat.d0.target450k$dmp_granges)))
+
+dat.d1.target450k = methylCC:::.pick_target_positions(target_granges = gr_target450k, 
+                                                      dmp_regions = onMethRegions)
+mu1.target450k <- rowMeans(as.data.frame(mcols(dat.d1.target450k$dmp_granges)))
+
+#### RRBS target data
+dat.d0.targetbs = methylCC:::.pick_target_positions(target_granges = gr_targetbs, target_object = M_targetbs, 
+                                      target_cvg = cvg_targetbs, dmp_regions = offMethRegions)
+mu0.targetbs <- rowMeans(as.data.frame(mcols(dat.d0.targetbs$dmp_granges)), na.rm = TRUE)
+mu0.targetbs <- mu0.targetbs[mu0.targetbs != 0]
+
+dat.d1.targetbs = methylCC:::.pick_target_positions(target_granges = gr_targetbs, target_object = M_targetbs, 
+                                      target_cvg = cvg_targetbs, dmp_regions = onMethRegions)
+mu1.targetbs <- rowMeans(as.data.frame(mcols(dat.d1.targetbs$dmp_granges)), na.rm = TRUE)
+mu1.targetbs <- mu1.targetbs[mu1.targetbs != 1]
+
+dat = data.frame("means" = c(mu0.target450k, mu0.targetbs, mu1.target450k, mu1.targetbs), 
+                 "Platform" = as.factor(c(rep.int("450k", length(mu0.target450k)),
+                                          rep.int("RRBS", length(mu0.targetbs)), 
+                                          rep.int("450k", length(mu1.target450k)), 
+                                          rep.int("RRBS", length(mu1.targetbs)))), 
+                 "Regions" = factor(c(rep("Not methylated", length(c(mu0.target450k, mu0.targetbs))),
+                                       rep("Methylated", length(c(mu1.target450k, mu1.targetbs)))), 
+                                levels = c("Not methylated", "Methylated")))
+
+p1 <- dat %>% ggplot(aes(x = means, colour = Platform)) + 
+    stat_density(aes(colour = Platform, linetype = Regions), geom = "line",position="identity", size = 1.2) + 
+    xlab("Methylation") + ylim(c(0, 130)) + xlim(c(0,1)) + 
+theme(axis.text.x = element_text(size = rel(1.2)), axis.text.y = element_text(size = rel(1.2)), 
+      title = element_text(size = rel(1.3)), panel.background = element_blank(), 
+      legend.text = element_text(size = rel(1.2)), 
+      legend.position = c(.95, .95),
+      legend.justification = c("right", "top"),
+      legend.box.just = "right",
+      legend.margin = margin(6, 6, 6, 6)) 
+
+pdf(file.path(workingDir_carmona2017,
+              "figs/Fig2B-platformDependent-density.pdf"), width = 7, height = 5)
+print(p1)
 dev.off()
-
 ```
 
 
+# Figure 3
 
-```{r}
-##### for Rafa's grant ######
-dfcombined.450k <- full_join(df.450k.Houseman, df.450k.Hicks, by = c("samples", "celltype"))  # only 450k data
-dfcombined.450k$celltype <- factor(dfcombined.450k$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
+Example region with a cell type-spcific Houseman CpG in 450K sample, 
+but CpG is not observed in RRBS sample. Using cell type-specific regions
+is a solution to this.Uses Carmona et al. (2017) data loaded from Figure 1
 
-# ggplot(dfcombined, aes(x=est.x, y = est.y)) +
-#   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-#   facet_wrap(~celltype) + geom_point() +
-#   xlab("Using minfi::estimateCellCounts()") + ylab("Using methylCC::estimateCC()") +
-#   labs(title = "Comparing cell composition estimates")
+```{r create-Figure3}
+library(Gviz)
+gtrack <- GenomeAxisTrack()
 
+dat_all <- merge(gr_target450k[,4], gr_targetbs[,1], all=TRUE)
+genome(dat_all) <- "hg19"
 
-z.450k <- rbind(data.frame("Method" = rep("Houseman", nrow(df.450k.Houseman)), 
-                      df.450k.Houseman), 
-           data.frame("Method" = rep("methylCC", nrow(df.450k.Hicks)), 
-                      df.450k.Hicks))
+# Combine everything and create individual tracks
+expandbump <- 1e2
 
-z.rrbs <- rbind(data.frame("Method" = rep("Houseman", nrow(df.RRBS.Houseman)), 
-                      df.RRBS.Houseman), 
-           data.frame("Method" = rep("methylCC", nrow(df.RRBS.Hicks)), 
-                      df.RRBS.Hicks))
+output <- find_dmrs(gr_target = NULL,
+                    include_cpgs = FALSE, include_dmrs = TRUE)
 
-# df.all <- rbind(data.frame("Platform" = rep("450k", nrow(z.450k)), z.450k),
-#                 data.frame("Platform" = rep("RRBS", nrow(z.rrbs)), z.rrbs))
+kk <- subsetByOverlaps(output$regions_all, 
+                       output$regions_houseman) + expandbump
+ind = 11
+tmp_flowSort = methylCC:::.pick_target_positions(gr_train450k, dmp_regions = kk[ind,])
+dTrack_flowSort <- DataTrack(tmp_flowSort$probeGRanges, name = "Observed Methylation", type = c("p", "smooth"), 
+                        ylim=c(0, 1), cex.title=1.25, cex.axis=1.25, lwd = 3, degree = 1, span = 0.75,
+                        col = gg_color_hue(6), 
+                        groups = pd0$CellType)
 
-df.all <- full_join(z.450k, z.rrbs, by = c("Method", "ID", "celltype")) 
-df.all$celltype <- factor(df.all$celltype, levels = c("Bcell", "Tcell", "Mono", "Gran"))
-df.all$Method <- factor(df.all$Method, levels = c("Houseman", "methylCC"))
+plotTracks(dTrack_flowSort)
 
-# gmat <- ggplot(df.all, aes(x=est.x, y = est.y, color = Method)) + 
-#   facet_wrap(~celltype) + geom_point(size = 2) + 
-#   geom_abline(intercept = 0, slope = 1, color = "gray", linetype = 2) + 
-#   xlim(0,1) + ylim(0,1) +
-#   xlab("450K platform") + 
-#   ylab("RRBS platform") + theme(legend.position="top") + 
-#   labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms")
+tmp = methylCC:::.pick_target_positions(dat_all, dmp_regions = kk[ind,])
+atrack_CT <- AnnotationTrack(subsetByOverlaps(output$regions_houseman, kk[ind,]), 
+                             name = "CpG", stacking = "dense",
+                             cex.title=1.1, cex.axis=1.1, rotation.title=0)
 
+atrack_region <- AnnotationTrack(subsetByOverlaps(output$regions_all, kk[ind,]), 
+                                 name = "DMR", stacking = "dense",
+                                 cex.title=1.1, cex.axis=1.1, rotation.title=0)
 
+ll <- methylCC:::.pick_target_positions(dat_all, dmp_regions = kk[ind,]- expandbump)
+dTrack_all <- DataTrack(ll$probeGRanges, 
+                         name = "Observed Methylation", type = c("p"), 
+                        ylim=c(0, 1), cex.title=1.25, cex.axis=1.25, lwd = 3,
+                        col = gg_color_hue(2), 
+                        baseline = c(as.numeric(as.data.frame(mcols(ll$dmp_granges)))),
+                        col.baseline = gg_color_hue(2), lty.baseline = 2, 
+                        lwd.baseline = 3,
+                        groups = rep(c("450k", "RRBS"), each = 1))
 
+plotTracks(dTrack_all)
 
-# colored by cell type
-gmat <- ggplot(df.all, aes(x=est.x, y = est.y, color = celltype)) + 
-  facet_wrap(~Method) + geom_point(size=3) + 
-  geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
-  xlab("450K platform") + ylab("RRBS platform") + 
-  scale_color_discrete(name = "Cell type") + 
-  theme(legend.position = "top", legend.justification= "center") + 
-  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms")
-
-pdf(file.path(dataPath, "figs/array_rrbs_BothMethods.pdf"), width = 8, height = 5)
-print(gmat)
+pdf(file.path(workingDir_carmona2017, 
+              "figs/Fig3A-celltypespecificRegion.pdf"), width = 8, height = 5)
+plotTracks(list(dTrack_flowSort, atrack_CT, atrack_region, gtrack),
+           main = "Chromosome 14", 
+           from = start(kk[ind,]), to = end(kk[ind,]),
+           cex= 1.1, cex.legend = 1.25, cex.main = 1.1)
 dev.off()
 
 
-pdf(file.path(dataPath, "figs/rafagrant_short.pdf"), width = 7, height =7)
-print(gmat)
+pdf(file.path(workingDir_carmona2017, 
+              "figs/Fig3B-celltypespecificRegion.pdf"), width = 8, height = 5)
+plotTracks(list(dTrack_all, atrack_region, gtrack),
+           main = "Chromosome 14", 
+           from = start(kk[ind,]), to = end(kk[ind,]),
+           cex= 1.1, cex.legend = 1.25, cex.main = 1.1)
 dev.off()
-
 ```
 
 
+# Figure S1
 
+```{r create-Figure4}
+output <- find_dmrs(gr_target = NULL,
+                    include_cpgs = FALSE, include_dmrs = TRUE)
+dat <- as.data.frame(output$zmat)
+dat <- dat[,c(4,2,3,1,5,6)]
 
+pdf(file.path(workingDir_carmona2017, "figs/Figure4.pdf"), width = 5, height = 6)
+rafalib::imagemat(dat[with(dat, order(-Bcell, -CD4T, -CD8T, -Gran, -Mono, -NK)), ], 
+         main = "Cell type-specific DNAm profiles\nMethylated (black), Unmethylated (white)", 
+         ylab = "Regions", xlab = " ", xaxt = "n", 
+         cex.axis = 1.3, cex.lab = 1.3, cex.main = 1.3)
+axis(1, at=1:6,labels=colnames(dat), srt=45, las = 2,
+     cex.axis = 1.3, cex.lab = 1.3, cex.main = 1.3)
+dev.off()
+```
 
 
 

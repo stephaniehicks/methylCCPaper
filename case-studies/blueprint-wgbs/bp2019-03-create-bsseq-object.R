@@ -1,6 +1,7 @@
 library(rtracklayer)
 library(bsseq)
 library(liftOver)
+library(GenomicRanges)
 
 path = system.file(package="liftOver", "extdata", "hg38ToHg19.over.chain")
 ch = import.chain(path)
@@ -23,12 +24,12 @@ for(smps in levels(custom_table$sample_name))
   custom_table_cov  <- custom_table[custom_table$sample_name %in% smps &
                                       grepl("_calls.bs_cov", custom_table$file_name), ]
   
-  gr_call <- import(file.path(dataPath, "files_bigwig", 
+  gr_call <- rtracklayer::import(file.path(dataPath, "files_bigwig", 
                               custom_table_call$file_name), 
                     format = "bigWig")
   colnames(mcols(gr_call)) <-  "score_call" 
   
-  gr_cov <- import(file.path(dataPath, "files_bigwig", 
+  gr_cov <- rtracklayer::import(file.path(dataPath, "files_bigwig", 
                              custom_table_cov$file_name), 
                    format = "bigWig")
   colnames(mcols(gr_cov)) <-  "score_cov" 
