@@ -1,9 +1,13 @@
 This repository contains the additional material and scripts for the manuscript: 
 
+## Pre-print 
+
 **Technology-independent estimation of cell type composition using differentially methylated regions** authored by 
 
 * Stephanie C. Hicks, shicks19@jhu.edu
 * Rafael A. Irizarry, rafa@jimmy.harvard.edu
+
+Pre-print is [available on bioRxiv](https://www.biorxiv.org/content/early/2017/11/03/213769). 
 
 ## Data
  
