@@ -107,3 +107,50 @@ dev.off()
 ```
 
 
+
+## Exploring cell type-specific DMRs in 450K vs WGBS purified whole blood samples 
+
+
+
+```{r}
+data_tidy <- readRDS(file.path(dataPath, "blueprint_celltype-450k-wgbs-withCpGs.RDS"))
+
+pdf("/users/shicks1/projects/methylCCPaper/case-studies/blueprint-wgbs/figs/test.pdf", width=6, height = 6)
+data_tidy %>% 
+  ggplot(aes(x = X1, y = X2, color = .id)) + 
+  geom_point() + 
+  xlab("450K platform") +
+  ylab("WGBS platform") +
+  labs(title = "Methylation levels in cell type-specific DMRs\nusing purified whole blood cell types", 
+       color = "Cell type") +
+  theme(legend.position = "top", legend.justification= "center") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+dev.off()
+
+```
+
+
+
+```{r}
+data_tidy <- readRDS(file.path(dataPath, "blueprint_celltype-450k-wgbs-noCpGs.RDS"))
+
+pdf("/users/shicks1/projects/methylCCPaper/case-studies/blueprint-wgbs/figs/fig-comparison-profiles-450k-wgbs.pdf", width=6, height = 6)
+data_tidy %>% 
+  ggplot(aes(x = X1, y = X2, color = .id)) + 
+  geom_point() + 
+  xlab("450K platform") +
+  ylab("WGBS platform") +
+  labs(title = "Methylation levels of purified whole blood cell types\n(cell type-specific DMRs identified\nusing purified cell types measured on 450K platform)", 
+       color = "Cell type") +
+  theme(legend.position = "top", legend.justification= "center") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells")) + 
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "gray") + 
+  geom_vline(xintercept = 0.5, linetype = "dashed", colour = "gray")
+dev.off()
+
+```
+
