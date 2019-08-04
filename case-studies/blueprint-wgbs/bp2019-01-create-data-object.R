@@ -1,3 +1,4 @@
+library(dplyr)
 library(DeepBlueR)
 library(foreach)
 library(data.table)
@@ -16,9 +17,7 @@ deepblue_list_projects() # "BLUEPRINT Epigenome", "DEEP (IHEC)"
 deepblue_list_techniques() # "WGBS", "RRBS", "BisulfiteSeq"
 deepblue_list_epigenetic_marks() # "DNA Methylation"
 deepblue_list_biosources() # e.g. blood, muscle, etc
-deepblue_list_experiments() 
-
-
+# deepblue_list_experiments() 
 
 # next we search experiments
 keep_biosource <- c("CD14-positive, CD16-negative classical monocyte", 
