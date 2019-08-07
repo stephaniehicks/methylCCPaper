@@ -17,6 +17,10 @@ custom_table$file_name <- unlist(lapply(stringr::str_split(custom_table$file_pat
 custom_table$biosource_short <- unlist(lapply(stringr::str_split(custom_table$biosource, "-"), 
                                               function(x){ x[[1]]}))
 
+#######################################
+### Creating individual BSseq objects
+#######################################
+
 for(smps in levels(custom_table$sample_name))
 {
   custom_table_call <- custom_table[custom_table$sample_name %in% smps &
@@ -61,7 +65,7 @@ for(smps in levels(custom_table$sample_name))
   pData(BS) <- DataFrame(custom_table_call)
   BS <- updateObject(BS)
   
-  saveRDS(BS, file = file.path(dataPath, "files_bsseq",
+  saveRDS(BS, file = file.path(dataPath, "files_bsseq", "indvidual",
                                paste0("blueprint_blood_bs_", 
                                       custom_table_cov$sample_name, ".RDS")))
   rm(BS)
