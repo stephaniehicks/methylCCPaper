@@ -273,6 +273,7 @@ df.450k.Houseman <-
 
 # Run `methylCC::estimatecc()` on `RGset_target450k` 
 
+Including DMRs
 ```{r}
 # output <- find_dmrs(gr_target = NULL,
 #                     include_cpgs = TRUE, include_dmrs = TRUE)
@@ -312,6 +313,35 @@ dfcombined %>%
 
 ```
 
+
+Now ONLY CpGs (for reviewer)
+```{r}
+output_onlyCpGs <- find_dmrs(gr_target = NULL,
+                    include_cpgs = TRUE, include_dmrs = FALSE)
+
+# run methylCC::estimatecc
+set.seed(12345)
+est <- estimatecc(object = RGset_target450k,
+                  find_dmrs_object = output_onlyCpGs,
+                  verbose = TRUE, epsilon = 0.01,
+                  max_iter = 100, init_param_method = "random")
+counts.450k.Hicks.onlyCpGs <- cell_counts(est)
+rownames(counts.450k.Hicks.onlyCpGs) <- colnames(RGset_target450k)
+
+write.csv(counts.450k.Hicks.onlyCpGs,
+          file = file.path(workingDir_carmona2017,
+                "ests/450k-methylCC-estimatecc-onlyCpGs.csv"),
+          row.names = TRUE)
+
+counts.450k.Hicks.onlyCpGs <- 
+  read.csv(file.path(workingDir_carmona2017, 
+                     "ests/450k-methylCC-estimatecc-onlyCpGs.csv"), 
+           row.names = 1)
+
+df.450k.Hicks.onlyCpGs = tidyr::gather(cbind("samples" = pData(RGset_target450k)$sampleID, 
+                              "ID" = pData(RGset_target450k)$ID, counts.450k.Hicks.onlyCpGs),
+                       celltype, est, -samples, -ID)
+```
 
 # Run `minfi:::projectCellType()` (Houseman model)  on RRBS data
 
@@ -384,6 +414,7 @@ dev.off()
 
 # Run `methylCC::estimatecc()` on a `BS` (RRBS data)
 
+Including DMRs
 ```{r}
 # output_nogr <- find_dmrs(gr_target = NULL, 
 #                          include_cpgs = TRUE, include_dmrs = TRUE)
@@ -435,9 +466,40 @@ df.RRBS.Hicks = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 
 ```
 
+Now ONLY CpGs (for reviewer)
+```{r}
+output_onlyCpGs <- find_dmrs(gr_target = NULL,
+                    include_cpgs = TRUE, include_dmrs = FALSE)
 
-# Run `methylCC::estimatecc()` modified on a `BS` (RRBS data)
+# run methylCC::estimatecc
+set.seed(12345)
+est <- estimatecc(object = BS,
+                  find_dmrs_object = output_onlyCpGs,
+                  verbose = TRUE, epsilon = 0.01,
+                  max_iter = 100, init_param_method = "random")
+# [estimatecc] BSseq object contained
+#                 101 out of 600 celltype-specific regions.
+# [estimatecc] Starting parameter estimation using 101 regions.
 
+counts.RRBS.Hicks.onlyCpGs <- cell_counts(est)
+rownames(counts.RRBS.Hicks.onlyCpGs) <- pData(BS)$ID
+
+write.csv(counts.RRBS.Hicks.onlyCpGs,
+          file = file.path(workingDir_carmona2017,
+                "ests/rrbs-methylCC-estimatecc-mod-onlyCpGs.csv"),
+          row.names = TRUE)
+
+counts.RRBS.Hicks.onlyCpGs <- 
+  read.csv(file.path(workingDir_carmona2017, 
+                     "ests/rrbs-methylCC-estimatecc-mod-onlyCpGs.csv"), 
+           row.names = 1)
+
+df.RRBS.Hicks.onlyCpGs = tidyr::gather(cbind("samples" = pData(BS)$sampleID, 
+                             "ID" = pData(BS)$ID, counts.RRBS.Hicks.onlyCpGs), 
+                       celltype, est, -samples, -ID)
+```
+
+Including DMRs, but also including `gr_target`
 ```{r}
 # output <- find_dmrs(gr_target = gr_targetbs,
 #                     include_cpgs = TRUE, include_dmrs = TRUE)#,
@@ -492,6 +554,43 @@ df.RRBS.Hicks.mod = tidyr::gather(cbind("samples" = pData(BS)$sampleID,
 ```
 
 
+
+# Run `methylCC::estimatecc()` on a `BS` (RRBS data) but using regions identified with WGBS
+
+```{r}
+output_nogr_wgbs <- find_dmrs_wgbs(num_regions = 100, dmr_up_cutoff = 1, 
+                              dmr_down_cutoff = 1)
+
+# run methylCC::estimatecc
+set.seed(12345)
+est <- estimatecc(object = BS,
+                  find_dmrs_object = output_nogr_wgbs,
+                  verbose = TRUE, epsilon = 0.01,
+                  max_iter = 100, init_param_method = "random")
+# [estimatecc] BSseq object contained
+#                 126 out of 435 celltype-specific regions.
+# [estimatecc] Starting parameter estimation using 520 regions.
+
+counts.RRBS.Hicks.wgbs <- cell_counts(est)
+rownames(counts.RRBS.Hicks.wgbs) <- pData(BS)$ID
+
+# write.csv(counts.RRBS.Hicks.wgbs,
+#           file = file.path(workingDir_carmona2017, "ests/rrbs-methylCC-estimatecc-wgbsregions.csv"),
+#           row.names = TRUE)
+# 
+# counts.RRBS.Hicks.wgbs <- read.csv(file.path(workingDir_carmona2017,
+#                                         "ests/rrbs-methylCC-estimatecc-mod.csv"),
+#                               row.names = 1)
+
+df.RRBS.Hicks.wgbs = tidyr::gather(cbind("samples" = pData(BS)$sampleID, 
+                             "ID" = pData(BS)$ID, counts.RRBS.Hicks.wgbs), 
+                       celltype, est, -samples, -ID)
+
+```
+
+
+
+
 # Combine everything together
 
 ```{r}
@@ -499,19 +598,31 @@ z.450k <- rbind(data.frame("Method" = rep("Houseman", nrow(df.450k.Houseman)),
                       df.450k.Houseman),
                 data.frame("Method" = rep("Houseman (modified)", nrow(df.450k.Houseman)), 
                       df.450k.Houseman),
-                data.frame("Method" = rep("methylCC-old", nrow(df.450k.Hicks)), 
-                      df.450k.Hicks),
                 data.frame("Method" = rep("methylCC", nrow(df.450k.Hicks)), 
+                      df.450k.Hicks),
+                data.frame("Method" = rep("methylCC (modified)", nrow(df.450k.Hicks)), 
+                      df.450k.Hicks), 
+                data.frame("Method" = rep("methylCC (CpGs only)", nrow(df.450k.Hicks)), 
+                      df.450k.Hicks.onlyCpGs), 
+                data.frame("Method" = rep("methylCC (using 450K regions)", nrow(df.450k.Hicks)), 
+                      df.450k.Hicks), 
+                 data.frame("Method" = rep("methylCC (using WGBS regions)", nrow(df.450k.Hicks)), 
                       df.450k.Hicks))
 
 z.rrbs <- rbind(data.frame("Method" = rep("Houseman", nrow(df.RRBS.Houseman)), 
                       df.RRBS.Houseman),
                 data.frame("Method" = rep("Houseman (modified)", nrow(df.RRBS.Houseman.mod)), 
                       df.RRBS.Houseman.mod), 
-                data.frame("Method" = rep("methylCC-old", nrow(df.RRBS.Hicks)), 
+                data.frame("Method" = rep("methylCC", nrow(df.RRBS.Hicks)), 
                       df.RRBS.Hicks), 
-                data.frame("Method" = rep("methylCC", nrow(df.RRBS.Hicks.mod)), 
-                      df.RRBS.Hicks.mod))
+                data.frame("Method" = rep("methylCC (modified)", nrow(df.RRBS.Hicks.mod)), 
+                      df.RRBS.Hicks.mod),
+                data.frame("Method" = rep("methylCC (CpGs only)", nrow(df.RRBS.Hicks.mod)), 
+                      df.RRBS.Hicks.onlyCpGs),
+                data.frame("Method" = rep("methylCC (using 450K regions)", nrow(df.RRBS.Hicks.mod)), 
+                      df.RRBS.Hicks), 
+                data.frame("Method" = rep("methylCC (using WGBS regions)", nrow(df.RRBS.Hicks.wgbs)), 
+                      df.RRBS.Hicks.wgbs))
 
 df.all <- full_join(z.450k, z.rrbs, by = c("Method", "ID", "celltype"))
 colnames(df.all)[colnames(df.all) %in% c("est.x", "est.y")] <- 
@@ -519,18 +630,20 @@ colnames(df.all)[colnames(df.all) %in% c("est.x", "est.y")] <-
 df.all$celltype <- factor(df.all$celltype)
 
 dat_text <- as_tibble(df.all) %>% 
+  filter(!(Method %in% c("methylCC (modified)"))) %>% 
   group_by(Method) %>% 
   mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
-  summarize(rmse=mean(sq_diff)) %>% 
+  summarize(rmse=sqrt(mean(sq_diff))) %>% 
   mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
-  mutate(x = rep(0, 4)) %>% 
-  mutate(y = rep(0.75,4))
+  mutate(x = rep(0, 6)) %>% 
+  mutate(y = rep(0.75,6))
 dat_text
 
 gmat <-
   df.all %>% 
+  filter(!(Method %in% c("methylCC (modified)"))) %>% 
   ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
-  facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
+  facet_wrap(~ Method) + geom_point(size=3, aes(color = celltype)) + 
   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
   xlab("450K platform") + ylab("RRBS platform") + 
   theme(legend.position = "top", legend.justification= "center") + 
@@ -548,26 +661,28 @@ gmat <- gmat + geom_text(
 )
 
 pdf(file.path(workingDir_carmona2017, 
-              "figs/fig-carmona2017-houseman-ests-all.pdf"), width = 12, height = 5)
+              "figs/fig-carmona2017-houseman-ests-all.pdf"), width = 12, height = 8)
 print(gmat)
 dev.off()
 
 
 
-
+# 450K vs WGBS DMR comparison
 dat_text <- as_tibble(df.all) %>% 
   group_by(Method) %>% 
   mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
-  summarize(rmse=mean(sq_diff)) %>% 
+  summarize(rmse=sqrt(mean(sq_diff))) %>% 
   mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
-  mutate(x = rep(0, 4)) %>% 
-  mutate(y = rep(0.75,4)) %>% 
-  filter(!(Method %in% c("methylCC-old")))
+  mutate(x = rep(0, 7)) %>% 
+  mutate(y = rep(0.75,7)) %>% 
+  filter(!(Method %in% c("methylCC (modified)", "methylCC", 
+                         "methylCC (CpGs only)", "Houseman (modified)")))
 dat_text
 
 gmat <-
   df.all %>% 
-  filter(!(Method %in% c("methylCC-old"))) %>%
+  filter(!(Method %in% c("methylCC (modified)", "methylCC", 
+                         "methylCC (CpGs only)", "Houseman (modified)"))) %>%
   ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
   facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
@@ -592,19 +707,64 @@ print(gmat)
 dev.off()
 
 
+# CpG vs Region comparison
 dat_text <- as_tibble(df.all) %>% 
   group_by(Method) %>% 
   mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
-  summarize(rmse=mean(sq_diff)) %>% 
+  summarize(rmse=sqrt(mean(sq_diff))) %>% 
   mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
-  mutate(x = rep(0, 4)) %>% 
-  mutate(y = rep(0.75,4)) %>% 
-  filter(!(Method %in% c("methylCC-old", "Houseman (modified)")))
+  mutate(x = rep(0, 7)) %>% 
+  mutate(y = rep(0.75,7)) %>% 
+  filter(!(Method %in% c("methylCC (modified)", "methylCC (using 450K regions)", 
+                         "methylCC (using WGBS regions)", "Houseman (modified)")))
 dat_text
 
 gmat <-
   df.all %>% 
-  filter(!(Method %in% c("methylCC-old", "Houseman (modified)"))) %>%
+  filter(!(Method %in% c("methylCC (modified)", "methylCC (using 450K regions)", 
+                         "methylCC (using WGBS regions)", "Houseman (modified)"))) %>%
+  ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
+  facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
+  geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +
+  xlab("450K platform") + ylab("RRBS platform") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  labs(title = "Cell composition estimates from whole blood samples\nmeasured on two platforms") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))
+gmat <- gmat + geom_text(
+  data    = dat_text,
+  mapping = aes(x = x, y = y, label = label),
+  hjust   = -0.1,
+  vjust   = -1,
+  size = 5, 
+  fontface=2
+)
+
+pdf(file.path(workingDir_carmona2017, 
+              "figs/fig-carmona2017-houseman-ests-all-3-cpg-comparison.pdf"), width = 10, height = 5)
+print(gmat)
+dev.off()
+
+
+# Figure 4
+dat_text <- as_tibble(df.all) %>% 
+  group_by(Method) %>% 
+  mutate(sq_diff = (`450K platform` - `RRBS platform`)^2) %>% 
+  summarize(rmse=sqrt(mean(sq_diff))) %>% 
+  mutate(label = paste0("RMSE: ", round(rmse,4))) %>% 
+  mutate(x = rep(0, 7)) %>% 
+  mutate(y = rep(0.75,7)) %>% 
+  filter(!(Method %in% c("methylCC (modified)", "methylCC (using 450K regions)", 
+                         "methylCC (using WGBS regions)", "Houseman (modified)", 
+                         "methylCC (CpGs only)")))
+dat_text
+
+gmat <-
+  df.all %>% 
+  filter(!(Method %in% c("methylCC (modified)", "methylCC (using 450K regions)", 
+                         "methylCC (using WGBS regions)", "Houseman (modified)", 
+                         "methylCC (CpGs only)"))) %>%
   ggplot(aes(x=`450K platform`, y = `RRBS platform`)) + 
   facet_grid(~ Method) + geom_point(size=3, aes(color = celltype)) + 
   geom_abline(intercept = 0, slope = 1) + xlim(0,1) + ylim(0,1) +

@@ -1,7 +1,7 @@
 ---
-title: "Untitled"
-author: "Stephanie Hicks"
-date: "5/22/2019"
+title: Summary of BLUEPRINT Analyses
+author: Stephanie Hicks
+date: "August 2019"
 output: html_document
 ---
 
@@ -14,13 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
 library(cowplot)
-
 library(bsseq)
 
 workingDir_blueprint <- 
   "/users/shicks1/projects/methylCCPaper/case-studies/blueprint-wgbs"
 dataPath <- "/users/shicks1/data/DNAm/blueprint_ihec"
-
 ```
 
 ```{r}
@@ -31,26 +29,30 @@ custom_table$biosource_short <- unlist(lapply(stringr::str_split(custom_table$bi
                                               function(x){ x[[1]]}))
 ```
 
-Read in the results from methylcc
-```{r}
-counts_methylcc <- readRDS(file.path(dataPath, 
-                              "blueprint_blood_cc_methylcc.RDS"))
-# counts_methylcc <- readRDS(file.path(dataPath, 
-#                               "blueprint_blood_cc_methylcc-only-cpgs.RDS"))
-```
+## Identified cell type specific CpGs; purified cell types from 450k platform 
+
+Cell composition estimates from purified whole blood celltypes
+measured on WGBS platform, but cell type-specific CpGs identified 
+using purified cell types measured on 450K platform
 
 ```{r}
+counts_methylcc <- readRDS(file.path(dataPath, "files_cellcomp",
+                              "blueprint_blood_cc_methylcc-only-cpgs.RDS"))
+
 custom_table_sub <- custom_table %>% 
   filter(grepl("calls.bs_call", name))
 
-custom_table_ordered <- 
-  custom_table_sub[match(rownames(counts_methylcc), 
-                       custom_table_sub$sample_name), ]  
-```
+custom_table_ordered <- custom_table_sub[match(rownames(counts_methylcc), 
+                                               custom_table_sub$sample_name), ]  
+custom_table_ordered$cell_type <-
+  factor(plyr::revalue(custom_table_ordered$biosource_short,
+                       c("CD14"="Mono", "CD38"="Bcell", "CD4" = "CD4T",
+                         "CD8"="CD8T", "cytotoxic CD56" = "NK",
+                         "mature eosinophil" = "Gran",
+                         "mature neutrophil" = "Gran")))
+xmat = model.matrix(~ custom_table_ordered$cell_type - 1)
+colnames(xmat) = levels(custom_table_ordered$cell_type)
 
-  
-
-```{r}
 df_methylcc <- 
   tidyr::gather(cbind("samples" = rownames(counts_methylcc), 
                       "biosource" = custom_table_ordered$biosource,
@@ -62,44 +64,188 @@ df_methylcc$biosource <-
   factor(df_methylcc$biosource,
          levels = c("CD4-positive, alpha-beta T cell",
                     "CD8-positive, alpha-beta T cell", 
-                    "mature neutrophil", 
-                    "mature eosinophil", 
+                    "mature neutrophil", "mature eosinophil", 
                     "CD38-negative naive B cell", 
                     "CD14-positive, CD16-negative classical monocyte", 
                     "cytotoxic CD56-dim natural killer cell"))
 
 new_levels <- c("CD4-positive,\nalpha-beta T cell (N=12)", 
                 "CD8-positive,\nalpha-beta T cell (N=4)",
-                "mature neutrophil (N=12)", 
-                "mature eosinophil (N=2)",
+                "mature neutrophil (N=12)", "mature eosinophil (N=2)",
                 "CD38-negative\nnaive B cell (N=4)", 
                 "CD14-positive, CD16-negative\nclassical monocyte (N=6)", 
                 "cytotoxic CD56-dim\nnatural killer cell (N=4)")
 levels(df_methylcc$biosource) <- new_levels
 
-gmat_dmr <- df_methylcc %>% 
+gmat_cpg <- df_methylcc %>% 
   ggplot(aes(x = biosource, y = est)) + 
   geom_jitter(size=3, width = 0.25, aes(color = celltype)) + 
   coord_flip() + 
   xlab("cell types") +
   ylab("methylCC") +
-  labs(title = "Cell composition estimates from purified whole blood\ncelltypes measured on WGBS platform\n(N=44, data from BLUEPRINT -- using only cell type-specific DMRs)", 
+  labs(title = "Cell composition estimates from purified celltypes measured\non WGBS platform (N=44, data from BLUEPRINT)\n(cell type-specific CpGs identified using\npurified cell types measured on 450K platform)", 
          color = "Cell type") + 
   theme(legend.position = "top", legend.justification= "center") + 
   scale_color_discrete(name = "Cell type", 
                        labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
-                                  "Granulocytes","Monocytes", "Natural killer cells"))
+                                  "Granulocytes","Monocytes", "Natural killer cells")) 
 
 pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-only-cpgs.pdf"), 
-    width = 8, height = 6)
-print(gmat)
+    width = 9, height = 7)
+print(gmat_cpg)
 dev.off()
 
+```
 
-p1 <- plot_grid(gmat_cpg, gmat_dmr, ncol = 1, 
+## Identified cell type specific DMRs; purified cell types from 450k platform 
+
+Cell composition estimates from purified whole blood celltypes
+measured on WGBS platform, but cell type-specific DMRs identified 
+using purified cell types measured on 450K platform
+
+```{r}
+counts_methylcc <- readRDS(file.path(dataPath, "files_cellcomp",
+                              "blueprint_blood_cc_methylcc.RDS"))
+custom_table_sub <- custom_table %>% 
+  filter(grepl("calls.bs_call", name))
+
+custom_table_ordered <- custom_table_sub[match(rownames(counts_methylcc), 
+                                               custom_table_sub$sample_name), ]  
+custom_table_ordered$cell_type <-
+  factor(plyr::revalue(custom_table_ordered$biosource_short,
+                       c("CD14"="Mono", "CD38"="Bcell", "CD4" = "CD4T",
+                         "CD8"="CD8T", "cytotoxic CD56" = "NK",
+                         "mature eosinophil" = "Gran",
+                         "mature neutrophil" = "Gran")))
+xmat = model.matrix(~ custom_table_ordered$cell_type - 1)
+colnames(xmat) = levels(custom_table_ordered$cell_type)
+
+df_methylcc <- 
+  tidyr::gather(cbind("samples" = rownames(counts_methylcc), 
+                      "biosource" = custom_table_ordered$biosource,
+                      "biosource_short" = custom_table_ordered$biosource_short,
+                      counts_methylcc), 
+                celltype, est, -samples, -biosource, -biosource_short)
+
+df_methylcc$biosource <- 
+  factor(df_methylcc$biosource,
+         levels = c("CD4-positive, alpha-beta T cell",
+                    "CD8-positive, alpha-beta T cell", 
+                    "mature neutrophil", "mature eosinophil", 
+                    "CD38-negative naive B cell", 
+                    "CD14-positive, CD16-negative classical monocyte", 
+                    "cytotoxic CD56-dim natural killer cell"))
+
+new_levels <- c("CD4-positive,\nalpha-beta T cell (N=12)", 
+                "CD8-positive,\nalpha-beta T cell (N=4)",
+                "mature neutrophil (N=12)", "mature eosinophil (N=2)",
+                "CD38-negative\nnaive B cell (N=4)", 
+                "CD14-positive, CD16-negative\nclassical monocyte (N=6)", 
+                "cytotoxic CD56-dim\nnatural killer cell (N=4)")
+levels(df_methylcc$biosource) <- new_levels
+
+gmat_dmr <- df_methylcc %>%
+  ggplot(aes(x = biosource, y = est)) + 
+  geom_jitter(size=3, width = 0.25, aes(color = celltype)) + 
+  coord_flip() + 
+  xlab("cell types") +
+  ylab("methylCC") +
+  labs(title = "Cell composition estimates from purified celltypes measured\non WGBS platform (N=44, data from BLUEPRINT)\n(cell type-specific DMRs identified using\npurified cell types measured on 450K platform)", 
+         color = "Cell type") + 
+  theme(legend.position = "top", legend.justification= "center") + 
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells"))  + 
+  geom_text(x=6, y=0.5, size = 5, fontface = "bold",
+            label=paste0("RMSE: ", round(mean(sqrt(colMeans((counts_methylcc - xmat)^2))),3)))
+
+
+pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-new.pdf"), 
+    width = 9, height = 7)
+print(gmat_dmr)
+dev.off()
+
+```
+
+## Identified cell type specific DMRs; purified cell types from WGBS platform 
+
+Cell composition estimates from purified whole blood celltypes
+measured on WGBS platform, but cell type-specific DMRs identified 
+using purified cell types measured on WGBS platform
+
+```{r}
+counts_methylcc <- readRDS(file.path(dataPath, "files_cellcomp",
+                              "blueprint_blood_cc_methylcc_wgbsregions.RDS"))
+
+custom_table_sub <- custom_table %>% 
+  filter(grepl("calls.bs_call", name))
+
+custom_table_ordered <- custom_table_sub[match(rownames(counts_methylcc), 
+                                               custom_table_sub$sample_name), ]  
+
+custom_table_ordered$cell_type <-
+  factor(plyr::revalue(custom_table_ordered$biosource_short,
+                       c("CD14"="Mono", "CD38"="Bcell", "CD4" = "CD4T",
+                         "CD8"="CD8T", "cytotoxic CD56" = "NK",
+                         "mature eosinophil" = "Gran",
+                         "mature neutrophil" = "Gran")))
+xmat = model.matrix(~ custom_table_ordered$cell_type - 1)
+colnames(xmat) = levels(custom_table_ordered$cell_type)
+
+df_methylcc <- 
+  tidyr::gather(cbind("samples" = rownames(counts_methylcc), 
+                      "biosource" = custom_table_ordered$biosource,
+                      "biosource_short" = custom_table_ordered$biosource_short,
+                      counts_methylcc), 
+                celltype, est, -samples, -biosource, -biosource_short)
+
+df_methylcc$biosource <- 
+  factor(df_methylcc$biosource,
+         levels = c("CD4-positive, alpha-beta T cell",
+                    "CD8-positive, alpha-beta T cell", 
+                    "mature neutrophil", "mature eosinophil", 
+                    "CD38-negative naive B cell", 
+                    "CD14-positive, CD16-negative classical monocyte", 
+                    "cytotoxic CD56-dim natural killer cell"))
+
+new_levels <- c("CD4-positive,\nalpha-beta T cell (N=12)", 
+                "CD8-positive,\nalpha-beta T cell (N=4)",
+                "mature neutrophil (N=12)", "mature eosinophil (N=2)",
+                "CD38-negative\nnaive B cell (N=4)", 
+                "CD14-positive, CD16-negative\nclassical monocyte (N=6)", 
+                "cytotoxic CD56-dim\nnatural killer cell (N=4)")
+levels(df_methylcc$biosource) <- new_levels
+
+gmat_dmr_wgbs <- df_methylcc %>% 
+  ggplot(aes(x = biosource, y = est)) + 
+  geom_jitter(size=3, width = 0.25, aes(color = celltype)) + 
+  coord_flip() + 
+  xlab("cell types") +
+  ylab("methylCC") +
+  labs(title = "Cell composition estimates from purified celltypes measured\non WGBS platform (N=44, data from BLUEPRINT)\n(cell type-specific DMRs identified using\npurified cell types measured on WGBS platform)", 
+         color = "Cell type") + 
+  theme(legend.position = "top", legend.justification= "center") +
+  scale_color_discrete(name = "Cell type", 
+                       labels = c("B-cells", "CD4 T-cells", "CD8 T-cells", 
+                                  "Granulocytes","Monocytes", "Natural killer cells")) + 
+  geom_text(x=6, y=0.5, size = 5, fontface = "bold",
+            label=paste0("RMSE: ", round(mean(sqrt(colMeans((counts_methylcc - xmat)^2))),3)))
+
+
+pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-wgbs-regions-new.pdf"), 
+    width = 9, height = 7)
+print(gmat_dmr_wgbs)
+dev.off()
+
+```
+
+## Combine figures
+  
+```{r}
+p1 <- plot_grid(gmat_dmr, gmat_dmr_wgbs, ncol = 1, 
                 labels = LETTERS[1:2], label_size = 30)
 
-pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-both.pdf"), 
+pdf(file.path(workingDir_blueprint, "figs/fig-blueprint-ests-three.pdf"), 
     width = 10, height = 12)
 print(p1)
 dev.off()
@@ -109,8 +255,6 @@ dev.off()
 
 
 ## Exploring cell type-specific DMRs in 450K vs WGBS purified whole blood samples 
-
-
 
 ```{r}
 data_tidy <- readRDS(file.path(dataPath, "blueprint_celltype-450k-wgbs-withCpGs.RDS"))
@@ -151,6 +295,67 @@ data_tidy %>%
   geom_hline(yintercept = 0.5, linetype = "dashed", colour = "gray") + 
   geom_vline(xintercept = 0.5, linetype = "dashed", colour = "gray")
 dev.off()
+
+```
+
+## Exploring WGBS DMRs
+
+```{r}
+library(rhdf5) 
+library(HDF5Array)
+library(bsseq)
+library(dmrseq)
+
+hdf5_bs_se_path <- file.path(dataPath, "files_bsseq_hdf5_se")
+bs <- loadHDF5SummarizedExperiment(hdf5_bs_se_path)
+
+IDs = c("Gran", "CD4T", "CD8T", "Bcell","Mono", "NK")
+
+# extract beta values, phenotypic information and GRanges objects
+cell <- factor(bs$cell_type, levels = IDs)
+cell_levels <- levels(cell)
+
+# define design matrix to search for DMRs
+xmat = model.matrix(~ cell - 1)
+colnames(xmat) = cell_levels
+pData(bs) <- cbind(pData(bs), xmat)
+
+dmrs_found <- find_dmrs_wgbs(num_regions = 50, dmr_up_cutoff = 1, 
+                              dmr_down_cutoff = 1)
+
+pdf(file.path(workingDir_blueprint, 
+              "figs/fig-blueprint-coefs.pdf"), width = 10, height = 6)
+par(mfrow=c(1,2))
+image(t(dmrs_found$y_regions), xaxt="n", ylab = "regions", 
+      main = "WGBS cell type-specific DMRs\n(N=44 samples)")
+axis(side=1, at=seq(0, 1, length.out=44), labels=FALSE)
+text(seq(0, 1, length.out=44), par("usr")[3] - 0.1, 
+     labels = dmrs_found$pd$cell_type, srt = 90, pos = 1, xpd = TRUE)
+
+image(t(dmrs_found$profiles), xaxt="n", ylab = "regions", 
+      main = "WGBS cell type-specific profiles\n(avg across cell types)")
+axis(side=1, at=seq(0, 1, by =.2), labels=colnames(dmrs_found$zmat))
+dev.off()
+
+regs <- vector("list", length(IDs))
+for(ind in seq_len(length(IDs))){
+  regs[[ind]] <- readRDS(file = file.path(dataPath, "files_dmrs", 
+                              paste0("blueprint_blood_regions_dmrseq_", 
+                                     tolower(IDs[ind]),".RDS")))
+}
+
+# get annotations for hg18
+library(annotatr)
+annoTrack <- dmrseq::getAnnot("hg19")
+
+pdf(file.path(workingDir_blueprint, 
+              "figs/fig-blueprint-top-wgbs-regions.pdf"), width = 10, height = 6)
+for(ind in seq_len(length(IDs))){
+dmrseq::plotDMRs(bs, regions=regs[[ind]][1:5,], testCovariate=IDs[ind],
+         annoTrack=annoTrack, main = paste0("top 5 ", IDs[ind], " cell type-specific DMRs"))
+}
+dev.off()
+
 
 ```
 
